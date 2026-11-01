@@ -16,6 +16,14 @@ BUTTON_IDS: dict[str, int] = {
 }
 BUTTON_NAMES = {v: k for k, v in BUTTON_IDS.items()}
 
+# What a button does when a profile does not set it (as read from the device / Synapse).
+# Written explicitly so a mapping from the previous profile does not linger.
+DEFAULT_ACTIONS: dict[int, p.Action] = {
+    0x04: p.MouseButtonAction(4),
+    0x05: p.MouseButtonAction(5),
+    0x0F: p.RawAction(0x06, bytes.fromhex('0501900190')),  # sensitivity clutch, 400 DPI
+}
+
 MODIFIER_NAMES = {
     'ctrl': keys.Modifier.LEFT_CTRL, 'shift': keys.Modifier.LEFT_SHIFT,
     'alt': keys.Modifier.LEFT_ALT, 'win': keys.Modifier.LEFT_GUI,
@@ -63,6 +71,14 @@ def format_action(action: p.Action) -> str:
     return f'raw:{action.action_type:02x}:{action.payload().hex()}'
 
 
+def parse_any_action(text: str) -> p.Action:
+    """Like parse_action, but also accepts the ``raw:TT:HEX`` form format_action produces."""
+    if text.strip().lower().startswith('raw:'):
+        _, type_hex, data_hex = text.strip().split(':', 2)
+        return p.RawAction(int(type_hex, 16), bytes.fromhex(data_hex))
+    return parse_action(text)
+
+
 @dataclass(frozen=True)
 class Profile:
     name: str
@@ -82,7 +98,8 @@ class Profile:
         reports = []
         if (stages := self.dpi()) is not None:
             reports.append(p.set_dpi_stages(stages))
-        for button, action in sorted(self.buttons.items()):
+        buttons = {**DEFAULT_ACTIONS, **self.buttons}
+        for button, action in sorted(buttons.items()):
             reports.append(p.set_button_mapping(p.ButtonMapping(button, action)))
         return reports
 

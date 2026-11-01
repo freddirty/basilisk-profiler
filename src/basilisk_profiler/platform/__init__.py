@@ -15,6 +15,14 @@ def hid_backend():
     return win_hid
 
 
+def list_windows():
+    """Visible top-level windows (WindowInfo list); empty where not supported yet."""
+    if sys.platform == 'win32':
+        from .win.foreground import list_windows as win_list
+        return win_list()
+    return []
+
+
 def foreground_watcher(callback):
     """Calls ``callback(WindowInfo)`` whenever the active window changes."""
     if sys.platform == 'win32':

@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from ..core import config as cfg
+from ..gui.errors import install_excepthook, setup_logging
 from ..platform import foreground_watcher
 from .service import Service
 
@@ -51,8 +52,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--no-tray', action='store_true', help='run without the tray icon')
     parser.add_argument('-v', '--verbose', action='store_true')
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format='%(asctime)s %(levelname)s %(message)s')
+    setup_logging(args.config.parent / 'basilisk-profiler.log', args.verbose)
+    install_excepthook()
 
     cfg.ensure_exists(args.config)
     service = Service(args.config)
