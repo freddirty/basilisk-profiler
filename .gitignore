@@ -1,0 +1,4 @@
+captures/
+*.pcap
+*.pcapng
+__pycache__/
