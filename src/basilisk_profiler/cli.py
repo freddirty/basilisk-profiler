@@ -10,42 +10,9 @@ import json
 import sys
 from pathlib import Path
 
-from .core import keys
 from .core import protocol as p
 from .core.device import DeviceError, RazerDevice, find_devices
-
-MODIFIER_NAMES = {
-    'ctrl': keys.Modifier.LEFT_CTRL, 'shift': keys.Modifier.LEFT_SHIFT,
-    'alt': keys.Modifier.LEFT_ALT, 'win': keys.Modifier.LEFT_GUI,
-    'rctrl': keys.Modifier.RIGHT_CTRL, 'rshift': keys.Modifier.RIGHT_SHIFT,
-    'altgr': keys.Modifier.RIGHT_ALT, 'rwin': keys.Modifier.RIGHT_GUI,
-}
-
-
-def parse_action(text: str) -> p.Action:
-    """``mouse:5``, ``key:8``, ``ctrl+w``, ``KEY_E``, ``ctrl+shift+t``."""
-    text = text.strip().lower()
-    if text.startswith('mouse:'):
-        return p.MouseButtonAction(int(text[6:]))
-    if text.startswith('key:'):
-        text = text[4:]
-    *mods, key = text.split('+')
-    modifiers = 0
-    for m in mods:
-        if m not in MODIFIER_NAMES:
-            raise ValueError(f'unknown modifier: {m}')
-        modifiers |= MODIFIER_NAMES[m]
-    name = key.upper() if key.upper().startswith('KEY_') else f'KEY_{key.upper()}'
-    return p.KeyAction(keys.usage(name), modifiers)
-
-
-def format_action(action: p.Action) -> str:
-    if isinstance(action, p.MouseButtonAction):
-        return f'mouse:{action.button}'
-    if isinstance(action, p.KeyAction):
-        mods = [n for n, bit in MODIFIER_NAMES.items() if action.modifiers & bit]
-        return '+'.join([*mods, keys.name(action.usage).removeprefix('KEY_').lower()])
-    return f'raw:{action.action_type:02x}:{action.payload().hex()}'
+from .core.model import format_action, parse_action
 
 
 def format_stages(stages: p.DpiStages) -> str:
