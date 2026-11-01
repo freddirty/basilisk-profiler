@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .core import protocol as p
 from .core.device import DeviceError, RazerDevice, find_devices
-from .core.model import format_action, parse_action
+from .core.model import BUTTON_IDS, format_action, parse_action, parse_any_action
 
 
 def format_stages(stages: p.DpiStages) -> str:
@@ -86,22 +86,35 @@ def cmd_query(dev: RazerDevice, args) -> None:
     print(response.args[:response.size].hex(' '))
 
 
+def _read_store(dev: RazerDevice, store: int, buttons: list[int]) -> dict:
+    return {
+        'dpi': stages_to_json(dev.dpi_stages(store)),
+        'buttons': {f'0x{b:02X}': format_action(dev.button(b, store).action) for b in buttons},
+    }
+
+
 def cmd_backup(dev: RazerDevice, args) -> None:
+    stores = [p.STORE_LIVE, *p.ONBOARD_STORES] if args.all else [p.STORE_LIVE]
+    buttons = args.button or sorted(BUTTON_IDS.values())
     data = {
         'device_mode': dev.device_mode(),
-        'dpi': stages_to_json(dev.dpi_stages(p.STORE_LIVE)),
-        'buttons': {f'0x{b:02X}': format_action(dev.button(b).action) for b in args.button},
+        'slots': {f'0x{s:02X}': _read_store(dev, s, buttons) for s in stores},
     }
     Path(args.file).write_text(json.dumps(data, indent=2))
-    print(f'saved to {args.file}: {json.dumps(data)}')
+    print(f'saved {len(stores)} slot(s) x {len(buttons)} buttons to {args.file}')
 
 
 def cmd_restore(dev: RazerDevice, args) -> None:
     data = json.loads(Path(args.file).read_text())
-    dev.set_dpi_stages(stages_from_json(data['dpi']))
-    for button, action in data.get('buttons', {}).items():
-        dev.set_button(p.ButtonMapping(int(button, 16), parse_action(action)))
-    print(f'restored from {args.file}; dpi stages: {format_stages(dev.dpi_stages())}')
+    slots = data.get('slots') or {'0x01': {'dpi': data['dpi'], 'buttons': data.get('buttons', {})}}
+    for store_text, slot in slots.items():
+        store = int(store_text, 16)
+        stages = stages_from_json(slot['dpi'])
+        dev.set_dpi_stages(p.DpiStages(stages.stages, active=stages.active, store=store))
+        for button, action in slot.get('buttons', {}).items():
+            dev.set_button(p.ButtonMapping(int(button, 16), parse_any_action(action), store=store))
+    print(f'restored {len(slots)} slot(s) from {args.file}; '
+          f'live dpi stages: {format_stages(dev.dpi_stages())}')
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -130,12 +143,14 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument('args', nargs='?', default='', help='argument bytes as hex')
     query.add_argument('--size', type=int, default=p.ARGS_LEN)
 
-    backup = sub.add_parser('backup', help='save live DPI stages and button mappings')
+    backup = sub.add_parser('backup', help='save DPI stages and button mappings')
     backup.add_argument('file')
+    backup.add_argument('--all', action='store_true',
+                        help='also the four onboard slots, not just the live one')
     backup.add_argument('--button', action='append', type=lambda s: int(s, 0),
-                        default=[], help='button ids to save, e.g. 0x05 (repeatable)')
+                        default=[], help='only these button ids, e.g. 0x05 (repeatable)')
 
-    restore = sub.add_parser('restore', help='write a backup back to the live slot')
+    restore = sub.add_parser('restore', help='write a backup back to the device')
     restore.add_argument('file')
     return parser
 
