@@ -6,14 +6,14 @@ Nyílt forráskódú profilkezelő a **Razer Basilisk V3 Pro** egérhez (Mouse D
 - profilok tárolása az egér beépített profilhelyein,
 - automatikus profilváltás az aktív (előtérben lévő) ablak alapján.
 
-> **Állapot:** tervezési fázis, alkalmazáskód még nincs. Előbb az architektúrát és a terveket egyeztetjük, csak utána indul a fejlesztés.
+> **Állapot:** az architektúra jóváhagyva, a fejlesztés elindult (M1: protokoll-könyvtár).
 
 ## Tartalom
 
 | mappa | leírás |
 |---|---|
 | [`docs/basilisk-v3-pro-protocol.md`](docs/basilisk-v3-pro-protocol.md) | a USB HID protokoll a Synapse 4 forgalmának visszafejtéséből (DPI, gombkiosztás, profilhelyek, Razer-billentyű események) |
-| `docs/architecture.md` | az architektúraterv (hamarosan) |
+| [`docs/architecture.md`](docs/architecture.md) | a jóváhagyott architektúra és a mérföldkövek |
 | [`data/session1/`](data/session1/) | dekódolt parancs- és válaszlisták az első USB-rögzítésből (a nyers pcap nem része a repónak) |
 | [`tools/razer_cmds.py`](tools/razer_cmds.py) | `tshark` mezőkimenetből listázza a 90 bájtos Razer feature reportokat |
 | [`tools/ldb.py`](tools/ldb.py) | a Synapse 4 IndexedDB (LevelDB `.ldb`, Snappy) táblájának kicsomagolója, tiszta Pythonban |
