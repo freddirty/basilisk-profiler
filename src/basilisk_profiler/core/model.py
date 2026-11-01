@@ -24,9 +24,8 @@ BUTTON_NAMES = {v: k for k, v in BUTTON_IDS.items()}
 
 # What a button does when a profile does not set it (as read from the device / Synapse).
 # Written explicitly so a mapping from the previous profile does not linger.
-# The scroll-mode button's factory action has not been seen yet, so it is only written
-# when a profile sets it.
 DEFAULT_ACTIONS: dict[int, p.Action] = {
+    p.ButtonId.SCROLL_MODE: p.ScrollModeAction(),
     p.ButtonId.WHEEL_CLICK: p.MouseButtonAction(3),
     p.ButtonId.BUTTON4: p.MouseButtonAction(4),
     p.ButtonId.BUTTON5: p.MouseButtonAction(5),
@@ -94,6 +93,8 @@ def parse_action(text: str) -> p.Action:
         return p.DpiAction(DPI_FUNCTIONS[parts[1]])
     if text == 'profile:cycle':
         return p.ProfileAction(p.ProfileFunction.CYCLE_UP)
+    if text == 'scroll_mode:toggle':
+        return p.ScrollModeAction()
     if text.startswith('key:'):
         text = text[4:]
     *mods, key = text.split('+')
@@ -124,6 +125,8 @@ def format_action(action: p.Action) -> str:
             return f'dpi:{names[action.function]}'
     if isinstance(action, p.ProfileAction) and action.function == p.ProfileFunction.CYCLE_UP:
         return 'profile:cycle'
+    if isinstance(action, p.ScrollModeAction):
+        return 'scroll_mode:toggle'
     return f'raw:{action.action_type:02x}:{action.payload().hex()}'
 
 

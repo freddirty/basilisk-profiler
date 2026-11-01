@@ -24,6 +24,8 @@ class FakeDevice:
         self.mode = p.DeviceMode.DRIVER
         self.fail = fail
         self.closed = False
+        self.active_store = 0x03  # an onboard slot was active when the service started
+        self.selected = []
 
     def transact(self, report):
         if self.fail:
@@ -36,6 +38,15 @@ class FakeDevice:
 
     def set_device_mode(self, mode):
         self.mode = mode
+
+    def active_profile(self):
+        if self.fail:
+            raise DeviceError('gone')
+        return self.active_store
+
+    def set_active_profile(self, store):
+        self.active_store = store
+        self.selected.append(store)
 
     def close(self):
         self.closed = True
@@ -198,7 +209,9 @@ def test_onboard_profiles_written_once(env):
     with_onboard(path, {'general': 1, 'browser': 4})
     os.utime(path, (clock.now, os.path.getmtime(path) + 5))
     service.tick()
-    assert stores_written(device) == [0x01, 0x02, 0x05]
+    # general lives in slot 1 (store 0x02): it is selected there, not written to 0x01
+    assert stores_written(device) == [0x02, 0x05]
+    assert device.active_store == 0x02
     assert service.state_path.exists()
     device.reports.clear()
     path.write_text(path.read_text() + '\n# touched\n')
@@ -247,3 +260,43 @@ def test_duplicate_onboard_slot_rejected(tmp_path):
     with_onboard(path, {'general': 2, 'browser': 2})
     with pytest.raises(cfg.ConfigError):
         cfg.load(path)
+
+
+def test_live_profile_selects_live_slot(env):
+    service, clock, device, *_ = env
+    service.tick()
+    assert device.active_store == p.STORE_LIVE  # was 0x03 at start; general is not onboard
+
+
+def test_profile_button_choice_kept_until_next_window_change(env):
+    service, clock, device, *_ = env
+    service.tick()
+    device.active_store = 0x04  # user pressed the profile button
+    service.tick()
+    assert device.active_store == 0x04
+    service.on_window(WindowInfo(process='firefox'))
+    service.tick()
+    clock.now += svc.DEBOUNCE
+    service.tick()
+    assert device.active_store == p.STORE_LIVE
+
+
+def test_onboard_window_profile_selected_without_rewrite(env):
+    service, clock, device, path, _ = env
+    with_onboard(path, {'browser': 4})
+    os.utime(path, (clock.now, os.path.getmtime(path) + 5))
+    service.tick()
+    device.reports.clear()
+    service.on_window(WindowInfo(process='brave'))
+    service.tick()
+    clock.now += svc.DEBOUNCE
+    service.tick()
+    assert device.reports == [] and device.active_store == 0x05
+
+
+def test_shutdown_restores_initial_slot(env):
+    service, clock, device, *_ = env
+    service.tick()
+    assert device.active_store == p.STORE_LIVE
+    service.shutdown()
+    assert device.active_store == 0x03

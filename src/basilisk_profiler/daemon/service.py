@@ -52,6 +52,7 @@ class Service:
         self.state_path = config_path.with_name('onboard-state.json')
         self._onboard_written: dict[str, str] = self._load_state()
         self._onboard_pending = False
+        self._initial_store: int | None = None  # slot active when the device was first opened
         self.reload_config(force=True)
 
     # --- inputs ----------------------------------------------------------------
@@ -76,18 +77,22 @@ class Service:
             except queue.Empty:
                 break
             self._schedule(self._wanted())
+        # onboard slots first: a window profile kept onboard is applied by selecting its slot
+        if self._onboard_pending and not self.paused and self._sync_onboard():
+            self._onboard_pending = False
         if self._pending and not self.paused:
             profile, due = self._pending
             if self._clock() >= due and self._apply(profile):
                 self._pending = None
-        if self._onboard_pending and not self.paused and self._sync_onboard():
-            self._onboard_pending = False
 
     def shutdown(self) -> None:
-        """Leave the mouse in normal mode so its profile button cycles onboard slots."""
+        """Give the mouse back as found: the slot that was active at start, normal mode."""
         if self._device is None:
             return
         try:
+            initial = self._initial_store
+            if initial is not None and self._device.active_profile() != initial:
+                self._device.set_active_profile(initial)
             if self._device.device_mode() != p.DeviceMode.NORMAL:
                 self._device.set_device_mode(p.DeviceMode.NORMAL)
         except (OSError, DeviceError) as e:
@@ -136,6 +141,9 @@ class Service:
             try:
                 self._device = self._open_device()
                 log.info('device opened')
+                if self._initial_store is None:
+                    self._initial_store = self._device.active_profile()
+                    log.info('active slot at start: 0x%02x', self._initial_store)
             except (OSError, DeviceError) as e:
                 log.debug('device not available: %s', e)
                 self._next_open = self._clock() + REOPEN_INTERVAL
@@ -183,8 +191,34 @@ class Service:
         except OSError as e:
             log.warning('could not save %s: %s', self.state_path, e)
 
+    def _select(self, store: int) -> bool:
+        """Make ``store`` the slot the mouse uses (it ignores all others)."""
+        device = self._device_or_none()
+        if device is None:
+            return False
+        try:
+            if device.active_profile() != store:
+                device.set_active_profile(store)
+        except (OSError, DeviceError) as e:
+            log.warning('selecting store 0x%02x failed: %s', store, e)
+            device.close()
+            self._device = None
+            self._next_open = self._clock() + REOPEN_INTERVAL
+            return False
+        return True
+
+    def _onboard_ready(self, profile: Profile) -> bool:
+        slot = profile.onboard_slot
+        if not slot:
+            return False
+        return self._onboard_written.get(str(slot)) == _digest(profile, onboard_store(slot))
+
     def _apply(self, profile: Profile) -> bool:
-        if not self._write(profile, p.STORE_LIVE):
+        """Onboard profiles are selected by slot; others are written to the live slot."""
+        if self._onboard_ready(profile):
+            if not self._select(onboard_store(profile.onboard_slot)):
+                return False
+        elif not (self._write(profile, p.STORE_LIVE) and self._select(p.STORE_LIVE)):
             return False
         log.info('profile %r applied (%s)', profile.name, self.window.process or '-')
         self.active = profile

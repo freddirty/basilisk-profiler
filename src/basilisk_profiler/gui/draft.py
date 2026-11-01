@@ -216,6 +216,8 @@ def describe_action(action: str | None) -> str:
         return f'clutch {action.split(":")[2]} DPI'
     if action == 'profile:cycle':
         return 'következő profil'
+    if action == 'scroll_mode:toggle':
+        return 'görgő mód váltás'
     if action == 'disabled':
         return 'letiltva'
     if action.startswith('raw:'):

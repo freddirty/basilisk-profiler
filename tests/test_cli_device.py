@@ -65,7 +65,7 @@ def test_transact_reports_failure():
 
 def test_transact_gives_up_when_always_busy():
     with pytest.raises(DeviceError, match='busy'):
-        device(busy=100).transact(p.get_device_mode())
+        device(busy=10_000).transact(p.get_device_mode())
 
 
 def test_dpi_round_trip_through_fake():

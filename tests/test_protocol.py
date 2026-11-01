@@ -194,3 +194,20 @@ def test_key_names():
     assert keys.name(0x25) == 'KEY_8'
     with pytest.raises(ValueError):
         keys.usage('KEY_NOPE')
+
+
+def test_active_profile_commands():
+    assert p.set_active_profile(0x05).command == (0x05, 0x04)
+    assert p.set_active_profile(0x05).args[:2] == b'\x05\x00'
+    answer = p.Report(0x05, 0x84, bytes([0x01, 0x00]), status=p.Status.SUCCESS)
+    assert p.parse_active_profile(answer) == p.STORE_LIVE
+    listing = p.Report(0x05, 0x81, bytes.fromhex('050102030405'), status=p.Status.SUCCESS)
+    assert p.parse_profile_list(listing) == [1, 2, 3, 4, 5]
+
+
+def test_scroll_mode_action_round_trips():
+    report = p.Report(0x02, 0x0C, bytes.fromhex('016a0012010100000000'))
+    mapping = p.parse_button_mapping(report)
+    assert mapping.button == p.ButtonId.SCROLL_MODE
+    assert mapping.action == p.ScrollModeAction()
+    assert p.set_button_mapping(mapping).args == report.args

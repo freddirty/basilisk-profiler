@@ -61,6 +61,7 @@ class ActionType(enum.IntEnum):
     PROFILE = 0x07
     CONSUMER = 0x0A  # HID consumer page usage (media keys)
     REPEAT_SCROLL = 0x0E  # factory action of the wheel tilts; not modelled further
+    SCROLL_MODE = 0x12  # 01 = toggle tactile / free spin (factory action of button 0x6A)
 
 
 class DpiFunction(enum.IntEnum):
@@ -327,6 +328,14 @@ class ProfileAction:
 
 
 @dataclass(frozen=True)
+class ScrollModeAction:
+    action_type = ActionType.SCROLL_MODE
+
+    def payload(self) -> bytes:
+        return b''
+
+
+@dataclass(frozen=True)
 class RawAction:
     """An action type this module does not model yet; kept so it round-trips."""
     type: int
@@ -341,7 +350,7 @@ class RawAction:
 
 
 Action = (MouseButtonAction | KeyAction | DisabledAction | ConsumerAction | DpiAction
-          | ProfileAction | RawAction)
+          | ProfileAction | ScrollModeAction | RawAction)
 
 
 @dataclass(frozen=True)
@@ -388,6 +397,8 @@ def parse_button_mapping(report: Report) -> ButtonMapping:
         action = DpiAction(DpiFunction.CLUTCH, int.from_bytes(data[1:3], 'big'))
     elif action_type == ActionType.PROFILE and length == 1:
         action = ProfileAction(data[0])
+    elif action_type == ActionType.SCROLL_MODE and data == b'':
+        action = ScrollModeAction()
     else:
         action = RawAction(action_type, data)
     return ButtonMapping(button, action, store=store, hypershift=bool(hypershift))
@@ -414,3 +425,30 @@ def parse_memory_info(response: Report) -> MemoryInfo:
     "Available 99.67%" = 0x4BC00 of 0x4C000."""
     a = response.args
     return MemoryInfo(total=int.from_bytes(a[2:6], 'big'), free=int.from_bytes(a[6:10], 'big'))
+
+
+# --- active profile slot (05/04, 05/84, 05/81) -----------------------------------
+# The mouse uses exactly one store at a time: the live slot 0x01 (LED white) or an onboard
+# slot (0x02 red .. 0x05 cyan). The profile button steps through them; writes to a store
+# that is not active have no visible effect until it is selected.
+
+def get_active_profile(**kw) -> Report:
+    return Report(0x05, 0x84, _args(size=2), **kw)
+
+
+def parse_active_profile(response: Report) -> int:
+    return response.args[0]
+
+
+def set_active_profile(store: int, **kw) -> Report:
+    return Report(0x05, 0x04, _args(store, size=2), **kw)
+
+
+def get_profile_list(**kw) -> Report:
+    """05/81 -> ``count, store ids...`` e.g. ``05 01 02 03 04 05``."""
+    return Report(0x05, 0x81, _args(size=2), **kw)
+
+
+def parse_profile_list(response: Report) -> list[int]:
+    count = response.args[0]
+    return list(response.args[1:1 + count])
