@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Mouse drawing with clickable button areas and Synapse-style callout labels.
 
-The drawing (gui/assets/basilisk_v3_pro_lines.png) is an edge-traced alpha mask made from
-a reference photo by tools/photo_to_lineart.py; it is tinted with the palette's text
-colour so it follows light and dark themes. Hotspot coordinates are given in the original
-1211x727 photo; the shipped image is the region SOURCE_CROP of it, scaled down.
+DRAWING is the owner's pencil drawing turned into an ink layer by tools/prepare_drawing.py;
+it is tinted with the palette's text colour, so it works on light and dark themes. If
+DARK_DRAWING exists it is used as-is on dark themes instead. Hotspots are in drawing
+pixels (1024x614); a replacement drawing of the same framing keeps them aligned.
 """
 from __future__ import annotations
 
@@ -17,8 +17,9 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from ..core.model import BUTTON_IDS
 
-PHOTO = Path(__file__).parent / 'assets' / 'basilisk_v3_pro_lines.png'
-SOURCE_CROP = QRectF(100, 40, 1010, 640)
+ASSETS = Path(__file__).parent / 'assets'
+DRAWING = ASSETS / 'basilisk_v3_pro_ink.png'
+DARK_DRAWING = ASSETS / 'basilisk_v3_pro_dark.png'
 ACCENT = QColor('#44d62c')
 DIM = QColor('#8a8a8a')
 LABEL_WIDTH = 190
@@ -30,23 +31,24 @@ LABEL_GAP = 8
 class Hotspot:
     key: str  # config button name, or an info-only id
     title: str
-    rect: QRectF  # in source-photo pixels
+    rect: QRectF  # in drawing pixels
     side: str  # 'left' or 'right' label column
     editable: bool = True
+    # labels are stacked per side in HOTSPOTS order, chosen so callout lines do not cross
 
 
 # Names follow Synapse's button map; only the side buttons are editable so far.
 HOTSPOTS = (
-    Hotspot('right_click', 'Jobb klikk', QRectF(160, 80, 100, 46), 'left', False),
-    Hotspot('wheel', 'Görgő (kattintás, döntés)', QRectF(272, 112, 100, 78), 'right', False),
-    Hotspot('scroll_mode', 'Görgő mód (racsnis / sima)', QRectF(479, 140, 52, 42), 'right',
+    Hotspot('right_click', 'Jobb klikk', QRectF(130, 98, 90, 34), 'left', False),
+    Hotspot('left_click', 'Bal klikk', QRectF(170, 185, 320, 110), 'left', False),
+    Hotspot('button5', 'Elülső oldalgomb (Mouse 5)', QRectF(300, 322, 138, 30), 'left'),
+    Hotspot('side_bottom', 'Érzékenység-clutch', QRectF(250, 346, 96, 40), 'left'),
+    Hotspot('button4', 'Hátsó oldalgomb (Mouse 4)', QRectF(444, 334, 144, 44), 'left'),
+    Hotspot('wheel', 'Görgő (kattintás, döntés)', QRectF(238, 100, 132, 52), 'right', False),
+    Hotspot('dpi_cycle', 'DPI-fokozat váltás', QRectF(462, 124, 46, 32), 'right', False),
+    Hotspot('scroll_mode', 'Görgő mód (racsnis / sima)', QRectF(406, 120, 50, 30), 'right',
             False),
-    Hotspot('dpi_cycle', 'DPI-fokozat váltás', QRectF(547, 140, 53, 42), 'right', False),
-    Hotspot('left_click', 'Bal klikk', QRectF(130, 196, 500, 140), 'left', False),
-    Hotspot('button5', 'Elülső oldalgomb (Mouse 5)', QRectF(298, 366, 214, 40), 'left'),
-    Hotspot('button4', 'Hátsó oldalgomb (Mouse 4)', QRectF(512, 386, 196, 62), 'left'),
-    Hotspot('side_bottom', 'Érzékenység-clutch', QRectF(318, 404, 108, 66), 'left'),
-    Hotspot('profile', 'Profilváltó gomb (alul)', QRectF(560, 600, 160, 40), 'right', False),
+    Hotspot('profile', 'Profilváltó gomb (alul)', QRectF(620, 515, 120, 30), 'right', False),
 )
 
 
@@ -55,7 +57,8 @@ class MouseView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.photo = QPixmap(str(PHOTO))
+        self.photo = QPixmap(str(DRAWING))
+        self.dark_photo = QPixmap(str(DARK_DRAWING)) if DARK_DRAWING.exists() else None
         self._tint: tuple[int, QPixmap] | None = None
         self.labels: dict[str, str] = {}
         self.selected: str | None = None
@@ -75,12 +78,13 @@ class MouseView(QWidget):
         self.update()
 
     def _drawing(self) -> QPixmap:
-        """The line mask filled with the current text colour (cached per colour)."""
+        """The ink layer filled with the current text colour (cached per colour)."""
         color = self.palette().text().color()
+        if self.dark_photo is not None and color.lightness() > 128:
+            return self.dark_photo
         if self._tint is None or self._tint[0] != color.rgba():
             pixmap = QPixmap(self.photo)
             painter = QPainter(pixmap)
-            painter.drawPixmap(0, 0, self.photo)  # second pass: stronger lines when scaled down
             painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
             painter.fillRect(pixmap.rect(), color)
             painter.end()
@@ -98,9 +102,8 @@ class MouseView(QWidget):
 
     def _map(self, rect: QRectF) -> QRectF:
         target = self._photo_rect()
-        s = target.width() / SOURCE_CROP.width()
-        return QRectF(target.x() + (rect.x() - SOURCE_CROP.x()) * s,
-                      target.y() + (rect.y() - SOURCE_CROP.y()) * s,
+        s = target.width() / self.photo.width()
+        return QRectF(target.x() + rect.x() * s, target.y() + rect.y() * s,
                       rect.width() * s, rect.height() * s)
 
     def _label_rects(self) -> dict[str, QRectF]:
@@ -108,8 +111,7 @@ class MouseView(QWidget):
         rects = {}
         step = LABEL_HEIGHT + LABEL_GAP
         for side in ('left', 'right'):
-            spots = sorted((h for h in HOTSPOTS if h.side == side),
-                           key=lambda h: h.rect.center().y())
+            spots = [h for h in HOTSPOTS if h.side == side]
             ys = []
             for h in spots:
                 y = self._map(h.rect).center().y() - LABEL_HEIGHT / 2
