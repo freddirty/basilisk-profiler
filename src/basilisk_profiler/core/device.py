@@ -13,6 +13,7 @@ from .. import (
     PID_MOUSE_DOCK_PRO,
     RAZER_VID,
 )
+from ..platform import hid_backend
 from . import protocol as p
 
 SUPPORTED_PIDS = (PID_MOUSE_DOCK_PRO, PID_BASILISK_V3_PRO_WIRED, PID_BASILISK_V3_PRO_WIRELESS)
@@ -50,8 +51,7 @@ EnumerateFn = Callable[[int, int], Iterable[dict]]
 def find_devices(enumerate_fn: EnumerateFn | None = None) -> list[DeviceInfo]:
     """Control interfaces of supported devices, the dock first."""
     if enumerate_fn is None:
-        import hid
-        enumerate_fn = hid.enumerate
+        enumerate_fn = hid_backend().enumerate
     found = []
     for d in enumerate_fn(RAZER_VID, 0):
         if d['product_id'] in SUPPORTED_PIDS and d['interface_number'] == CONTROL_INTERFACE:
@@ -75,7 +75,7 @@ class RazerDevice:
 
     @classmethod
     def open(cls, info: DeviceInfo | None = None) -> RazerDevice:
-        import hid
+        hid = hid_backend()
         candidates = [info] if info else find_devices()
         if not candidates:
             raise DeviceError('no Razer Basilisk V3 Pro / Mouse Dock Pro found')
@@ -149,5 +149,11 @@ class RazerDevice:
     def set_dpi_stages(self, stages: p.DpiStages) -> None:
         self.transact(p.set_dpi_stages(stages))
 
+    def button(self, button: int, store: int = p.STORE_LIVE) -> p.ButtonMapping:
+        return p.parse_button_mapping(self.transact(p.get_button_mapping(button, store)))
+
     def set_button(self, mapping: p.ButtonMapping) -> None:
         self.transact(p.set_button_mapping(mapping))
+
+    def firmware_version(self) -> str:
+        return p.parse_firmware_version(self.transact(p.get_firmware_version()))

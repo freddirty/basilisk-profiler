@@ -98,6 +98,22 @@ def test_unknown_action_round_trips():
     assert p.set_button_mapping(mapping, transaction_id=0x00).to_bytes() == report.to_bytes()
 
 
+def test_get_button_mapping():
+    request = p.get_button_mapping(0x05)
+    assert request.command == (0x02, 0x8C)
+    assert request.args[:3] == b'\x01\x05\x00' and request.size == 10
+    # answer read from the device: live slot Button5 = Ctrl+T
+    answer = p.Report(0x02, 0x8C, bytes.fromhex('01050002020117000000'),
+                      status=p.Status.SUCCESS)
+    mapping = p.parse_button_mapping(answer)
+    assert mapping.action == p.KeyAction(keys.usage('KEY_T'), keys.Modifier.LEFT_CTRL)
+
+
+def test_firmware_version():
+    answer = p.Report(0x00, 0x81, bytes.fromhex('0232'), status=p.Status.SUCCESS)
+    assert p.parse_firmware_version(answer) == '2.50'
+
+
 def test_battery_and_charging():
     assert p.parse_battery_percent(p.Report.from_bytes(find('rsp', (0x07, 0x80), 0x05))) == 100
     assert p.parse_charging(p.Report.from_bytes(find('rsp', (0x07, 0x84), 0x04))) is False

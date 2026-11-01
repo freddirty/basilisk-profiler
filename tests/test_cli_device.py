@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
+import json
+
 import pytest
 
 from basilisk_profiler import cli
@@ -125,12 +127,13 @@ def test_stages_json_round_trip():
 
 def test_backup_restore(tmp_path):
     stages = p.DpiStages(tuple(p.DpiStage(v, v) for v in (400, 1600, 1800)), active=3)
-    answer = p.set_dpi_stages(stages).args.ljust(p.ARGS_LEN, b'\x00')
-    dev = device(answer=answer)
+    dev = device(answer=p.set_dpi_stages(stages).args.ljust(p.ARGS_LEN, b'\x00'))
     backup = tmp_path / 'backup.json'
-    args = cli.build_parser().parse_args(['backup', str(backup), '--button', '0x05=mouse:5'])
-    cli.cmd_backup(dev, args)
+    cli.cmd_backup(dev, cli.build_parser().parse_args(['backup', str(backup)]))
     dev.handle.sent.clear()
+    data = json.loads(backup.read_text())
+    data['buttons'] = {'0x05': 'mouse:5'}
+    backup.write_text(json.dumps(data))
     cli.cmd_restore(dev, cli.build_parser().parse_args(['restore', str(backup)]))
     commands = [p.Report.from_bytes(s[1:]).command for s in dev.handle.sent]
     assert commands == [(0x04, 0x06), (0x02, 0x0C), (0x04, 0x86)]

@@ -76,6 +76,7 @@ def cmd_list(args) -> None:
 
 def cmd_info(dev: RazerDevice, args) -> None:
     mode = dev.device_mode()
+    print(f'firmware:    {dev.firmware_version()}')
     print(f'device mode: {p.DeviceMode(mode).name if mode in (0, 3) else hex(mode)}')
     print(f'battery:     {dev.battery_percent()}%' + (' (charging)' if dev.charging() else ''))
     print(f'dpi stages:  {format_stages(dev.dpi_stages())}')
@@ -92,6 +93,11 @@ def cmd_dpi(dev: RazerDevice, args) -> None:
 
 
 def cmd_button(dev: RazerDevice, args) -> None:
+    if args.action is None:
+        mapping = dev.button(args.button, args.store)
+        print(f'button 0x{args.button:02X} = {format_action(mapping.action)} '
+              f'(slot 0x{args.store:02X})')
+        return
     action = parse_action(args.action)
     dev.set_button(p.ButtonMapping(args.button, action, store=args.store))
     print(f'button 0x{args.button:02X} -> {format_action(action)} (slot 0x{args.store:02X})')
@@ -117,7 +123,7 @@ def cmd_backup(dev: RazerDevice, args) -> None:
     data = {
         'device_mode': dev.device_mode(),
         'dpi': stages_to_json(dev.dpi_stages(p.STORE_LIVE)),
-        'buttons': {f'0x{b:02X}': a for b, a in (args.button or [])},
+        'buttons': {f'0x{b:02X}': format_action(dev.button(b).action) for b in args.button},
     }
     Path(args.file).write_text(json.dumps(data, indent=2))
     print(f'saved to {args.file}: {json.dumps(data)}')
@@ -129,12 +135,6 @@ def cmd_restore(dev: RazerDevice, args) -> None:
     for button, action in data.get('buttons', {}).items():
         dev.set_button(p.ButtonMapping(int(button, 16), parse_action(action)))
     print(f'restored from {args.file}; dpi stages: {format_stages(dev.dpi_stages())}')
-
-
-def button_arg(text: str) -> tuple[int, str]:
-    button, _, action = text.partition('=')
-    parse_action(action)
-    return int(button, 0), action
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -149,9 +149,9 @@ def build_parser() -> argparse.ArgumentParser:
     dpi.add_argument('--active', type=int, help='active stage, 1-based')
     dpi.add_argument('--store', type=lambda s: int(s, 0), default=p.STORE_LIVE)
 
-    button = sub.add_parser('button', help='remap a button')
+    button = sub.add_parser('button', help='show or remap a button')
     button.add_argument('button', type=lambda s: int(s, 0), help='button id, e.g. 0x05')
-    button.add_argument('action', help='mouse:5 | key:8 | ctrl+w | KEY_E')
+    button.add_argument('action', nargs='?', help='mouse:5 | key:8 | ctrl+w | KEY_E')
     button.add_argument('--store', type=lambda s: int(s, 0), default=p.STORE_LIVE)
 
     mode = sub.add_parser('mode', help='show or set device mode')
@@ -163,10 +163,10 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument('args', nargs='?', default='', help='argument bytes as hex')
     query.add_argument('--size', type=int, default=p.ARGS_LEN)
 
-    backup = sub.add_parser('backup', help='save live DPI stages (+ given button mappings)')
+    backup = sub.add_parser('backup', help='save live DPI stages and button mappings')
     backup.add_argument('file')
-    backup.add_argument('--button', action='append', type=button_arg,
-                        help='known original mapping to restore later, e.g. 0x05=mouse:5')
+    backup.add_argument('--button', action='append', type=lambda s: int(s, 0),
+                        default=[], help='button ids to save, e.g. 0x05 (repeatable)')
 
     restore = sub.add_parser('restore', help='write a backup back to the live slot')
     restore.add_argument('file')
