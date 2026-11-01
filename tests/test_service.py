@@ -24,6 +24,8 @@ class FakeDevice:
         self.mode = p.DeviceMode.DRIVER
         self.fail = fail
         self.closed = False
+        self.active_store = 0x03  # an onboard slot was active when the service started
+        self.selected = []
 
     def transact(self, report):
         if self.fail:
@@ -36,6 +38,15 @@ class FakeDevice:
 
     def set_device_mode(self, mode):
         self.mode = mode
+
+    def active_profile(self):
+        if self.fail:
+            raise DeviceError('gone')
+        return self.active_store
+
+    def set_active_profile(self, store):
+        self.active_store = store
+        self.selected.append(store)
 
     def close(self):
         self.closed = True
@@ -66,7 +77,8 @@ def test_default_profile_applied_at_start(env):
     service, clock, device, *_ = env
     service.tick()
     assert service.active.name == 'general'
-    assert [r.command for r in device.reports] == [(4, 6), (2, 0x0C), (2, 0x0C), (2, 0x0C)]
+    expected = service.config.profiles['general'].reports()
+    assert [r.command for r in device.reports] == [r.command for r in expected]
 
 
 def test_window_switch_is_debounced(env):
@@ -79,7 +91,7 @@ def test_window_switch_is_debounced(env):
     clock.now += svc.DEBOUNCE
     service.tick()
     assert service.active.name == 'browser'
-    assert len(device.reports) == 3  # three buttons, no DPI table
+    assert len(device.reports) == len(service.config.profiles['browser'].reports())
 
 
 def test_quick_switch_back_writes_nothing(env):
@@ -106,7 +118,8 @@ def test_same_profile_not_rewritten(env):
         service.tick()
         clock.now += svc.DEBOUNCE
         service.tick()
-    assert len(device.reports) == 3  # written once for firefox, chrome uses the same profile
+    # written once for firefox; chrome and brave use the same profile
+    assert len(device.reports) == len(service.config.profiles['browser'].reports())
 
 
 def test_pause_holds_writes(env):
@@ -177,3 +190,113 @@ def test_shutdown_restores_normal_mode(env):
     service.tick()
     service.shutdown()
     assert device.mode == p.DeviceMode.NORMAL and device.closed
+
+
+def with_onboard(path, slots):
+    """Example config with onboard slots: {'general': 1, 'browser': 4}."""
+    text = cfg.EXAMPLE
+    for name, slot in slots.items():
+        text = text.replace(f'name = "{name}"\n', f'name = "{name}"\nonboard_slot = {slot}\n')
+    path.write_text(text)
+
+
+def stores_written(device):
+    return sorted({r.args[0] for r in device.reports})
+
+
+def test_onboard_profiles_written_once(env):
+    service, clock, device, path, _ = env
+    with_onboard(path, {'general': 1, 'browser': 4})
+    os.utime(path, (clock.now, os.path.getmtime(path) + 5))
+    service.tick()
+    # general lives in slot 1 (store 0x02): it is selected there, not written to 0x01
+    assert stores_written(device) == [0x02, 0x05]
+    assert device.active_store == 0x02
+    assert service.state_path.exists()
+    device.reports.clear()
+    path.write_text(path.read_text() + '\n# touched\n')
+    os.utime(path, (clock.now, os.path.getmtime(path) + 10))
+    service.tick()
+    assert 0x02 not in stores_written(device) and 0x05 not in stores_written(device)
+
+
+def test_onboard_state_survives_restart(env, tmp_path):
+    service, clock, device, path, _ = env
+    with_onboard(path, {'browser': 2})
+    os.utime(path, (clock.now, os.path.getmtime(path) + 5))
+    service.tick()
+    device.reports.clear()
+    again = svc.Service(path, open_device=lambda: device, clock=clock)
+    again.tick()
+    assert 0x03 not in stores_written(device)
+
+
+def test_changed_onboard_profile_is_rewritten(env):
+    service, clock, device, path, _ = env
+    with_onboard(path, {'browser': 3})
+    os.utime(path, (clock.now, os.path.getmtime(path) + 5))
+    service.tick()
+    device.reports.clear()
+    path.write_text(path.read_text().replace('button5 = "ctrl+t"', 'button5 = "ctrl+n"'))
+    os.utime(path, (clock.now, os.path.getmtime(path) + 10))
+    service.tick()
+    assert 0x04 in stores_written(device)
+
+
+def test_onboard_sync_retries_when_device_absent(env):
+    service, clock, device, path, opened = env
+    device.fail = True
+    with_onboard(path, {'general': 1})
+    os.utime(path, (clock.now, os.path.getmtime(path) + 5))
+    service.tick()
+    device.fail = False
+    clock.now += svc.REOPEN_INTERVAL
+    service.tick()
+    assert 0x02 in stores_written(device)
+
+
+def test_duplicate_onboard_slot_rejected(tmp_path):
+    path = tmp_path / 'c.toml'
+    with_onboard(path, {'general': 2, 'browser': 2})
+    with pytest.raises(cfg.ConfigError):
+        cfg.load(path)
+
+
+def test_live_profile_selects_live_slot(env):
+    service, clock, device, *_ = env
+    service.tick()
+    assert device.active_store == p.STORE_LIVE  # was 0x03 at start; general is not onboard
+
+
+def test_profile_button_choice_kept_until_next_window_change(env):
+    service, clock, device, *_ = env
+    service.tick()
+    device.active_store = 0x04  # user pressed the profile button
+    service.tick()
+    assert device.active_store == 0x04
+    service.on_window(WindowInfo(process='firefox'))
+    service.tick()
+    clock.now += svc.DEBOUNCE
+    service.tick()
+    assert device.active_store == p.STORE_LIVE
+
+
+def test_onboard_window_profile_selected_without_rewrite(env):
+    service, clock, device, path, _ = env
+    with_onboard(path, {'browser': 4})
+    os.utime(path, (clock.now, os.path.getmtime(path) + 5))
+    service.tick()
+    device.reports.clear()
+    service.on_window(WindowInfo(process='brave'))
+    service.tick()
+    clock.now += svc.DEBOUNCE
+    service.tick()
+    assert device.reports == [] and device.active_store == 0x05
+
+
+def test_shutdown_restores_initial_slot(env):
+    service, clock, device, *_ = env
+    service.tick()
+    assert device.active_store == p.STORE_LIVE
+    service.shutdown()
+    assert device.active_store == 0x03

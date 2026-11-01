@@ -146,6 +146,20 @@ class ConfigDraft:
             prof.pop('dpi_active', None)
         self.dirty = True
 
+    def onboard_slot(self, profile: str) -> int | None:
+        return self.profile(profile).get('onboard_slot')
+
+    def set_onboard_slot(self, profile: str, slot: int | None) -> None:
+        """Assign an onboard slot (1..4); a profile already in that slot gives it up."""
+        if slot is not None:
+            for prof in self.profiles:
+                if prof.get('onboard_slot') == slot:
+                    del prof['onboard_slot']
+            self.profile(profile)['onboard_slot'] = slot
+        else:
+            self.profile(profile).pop('onboard_slot', None)
+        self.dirty = True
+
     # --- rules -------------------------------------------------------------------
 
     def add_rule(self, field: str, pattern: str, profile: str) -> int:
@@ -179,12 +193,33 @@ class ConfigDraft:
         return index
 
 
+MEDIA_LABELS = {'play_pause': 'lejátszás/szünet', 'next': 'következő szám',
+                'previous': 'előző szám', 'stop': 'leállítás', 'volume_up': 'hangerő fel',
+                'volume_down': 'hangerő le', 'mute': 'némítás'}
+
+
 def describe_action(action: str | None) -> str:
     """Short Hungarian label for the mouse view."""
     if action is None:
         return 'alapértelmezett'
+    if action == 'mouse:9':
+        return 'görgetés fel'
     if action.startswith('mouse:'):
         return f'egérgomb {action[6:]}'
+    if action.startswith('media:'):
+        return MEDIA_LABELS.get(action[6:], 'multimédia')
+    if action == 'dpi:stage_up':
+        return 'DPI-fokozat fel'
+    if action == 'dpi:cycle':
+        return 'DPI-fokozatok körbe'
+    if action.startswith('dpi:clutch'):
+        return f'clutch {action.split(":")[2]} DPI'
+    if action == 'profile:cycle':
+        return 'következő profil'
+    if action == 'scroll_mode:toggle':
+        return 'görgő mód váltás'
+    if action == 'disabled':
+        return 'letiltva'
     if action.startswith('raw:'):
         return 'egyéb funkció'
     return action.upper().replace('+', ' + ')

@@ -34,21 +34,24 @@ class Hotspot:
     rect: QRectF  # in drawing pixels
     side: str  # 'left' or 'right' label column
     editable: bool = True
-    # labels are stacked per side in HOTSPOTS order, chosen so callout lines do not cross
+    # labels are stacked per side in HOTSPOTS order, chosen so callout lines do not cross:
+    # on the right, the spot furthest right gets the top label and the lines fan out
 
 
-# Names follow Synapse's button map; only the side buttons are editable so far.
+# Names follow Synapse's button map. Left and right click stay unmappable on purpose, so a
+# profile can never take away the primary buttons.
 HOTSPOTS = (
     Hotspot('right_click', 'Jobb klikk', QRectF(130, 98, 90, 34), 'left', False),
     Hotspot('left_click', 'Bal klikk', QRectF(170, 185, 320, 110), 'left', False),
     Hotspot('button5', 'Elülső oldalgomb (Mouse 5)', QRectF(300, 322, 138, 30), 'left'),
     Hotspot('side_bottom', 'Érzékenység-clutch', QRectF(250, 346, 96, 40), 'left'),
     Hotspot('button4', 'Hátsó oldalgomb (Mouse 4)', QRectF(444, 334, 144, 44), 'left'),
-    Hotspot('wheel', 'Görgő (kattintás, döntés)', QRectF(238, 100, 132, 52), 'right', False),
-    Hotspot('dpi_cycle', 'DPI-fokozat váltás', QRectF(462, 124, 46, 32), 'right', False),
-    Hotspot('scroll_mode', 'Görgő mód (racsnis / sima)', QRectF(406, 120, 50, 30), 'right',
-            False),
-    Hotspot('profile', 'Profilváltó gomb (alul)', QRectF(620, 515, 120, 30), 'right', False),
+    Hotspot('dpi_cycle', 'DPI-fokozat váltás', QRectF(462, 124, 46, 32), 'right'),
+    Hotspot('scroll_mode', 'Görgő mód (racsnis / sima)', QRectF(406, 120, 50, 30), 'right'),
+    Hotspot('tilt_right', 'Görgő döntés jobbra', QRectF(346, 112, 26, 36), 'right'),
+    Hotspot('wheel_click', 'Görgőkattintás', QRectF(268, 100, 76, 52), 'right'),
+    Hotspot('tilt_left', 'Görgő döntés balra', QRectF(238, 112, 26, 36), 'right'),
+    Hotspot('profile', 'Profilváltó gomb (alul)', QRectF(620, 515, 120, 30), 'right'),
 )
 
 

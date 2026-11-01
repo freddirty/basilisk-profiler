@@ -94,3 +94,20 @@ def test_describe_action():
     assert describe_action(None) == 'alapértelmezett'
     assert describe_action('mouse:4') == 'egérgomb 4'
     assert describe_action('ctrl+w') == 'CTRL + W'
+
+
+def test_onboard_slot_moves_between_profiles():
+    d = draft()
+    d.set_onboard_slot('general', 2)
+    d.set_onboard_slot('browser', 2)
+    assert d.onboard_slot('general') is None and d.onboard_slot('browser') == 2
+    assert d.config().onboard()[2].name == 'browser'
+    d.set_onboard_slot('browser', None)
+    assert d.config().onboard() == {}
+
+
+def test_describe_new_actions():
+    assert describe_action('media:play_pause') == 'lejátszás/szünet'
+    assert describe_action('dpi:clutch:800') == 'clutch 800 DPI'
+    assert describe_action('profile:cycle') == 'következő profil'
+    assert describe_action('mouse:9') == 'görgetés fel'

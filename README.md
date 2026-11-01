@@ -28,7 +28,11 @@ python -m basilisk_profiler.cli button 0x05 ctrl+t
 python -m basilisk_profiler.daemon                # háttérszolgáltatás tálcaikonnal
 ```
 
-A háttérszolgáltatás konfigja: `%APPDATA%\basilisk-profiler\config.toml` (Windows), illetve `~/.config/basilisk-profiler/config.toml` (Linux). Első indításkor egy példafájl jön létre. A fájlt a szolgáltatás a változás után automatikusan újratölti. A gombnevek: `button4`, `button5`, `side_bottom`, vagy hexában, pl. `0x34`. A műveletek formája: `mouse:4`, `key:8`, `ctrl+w`, `ctrl+shift+t`.
+A háttérszolgáltatás konfigja: `%APPDATA%\basilisk-profiler\config.toml` (Windows), illetve `~/.config/basilisk-profiler/config.toml` (Linux). Első indításkor egy példafájl jön létre. A fájlt a szolgáltatás a változás után automatikusan újratölti; a legegyszerűbb a tálcaikon „Beállítások…” ablakában szerkeszteni.
+
+- Gombnevek: `button4`, `button5`, `side_bottom` (érzékenység-clutch), `wheel_click`, `tilt_left`, `tilt_right`, `scroll_mode`, `dpi_cycle`, `profile`, vagy hexában, pl. `0x34`.
+- Műveletek: `mouse:4`, `mouse:9` (görgetés fel), `key:8`, `ctrl+w`, `ctrl+shift+t`, `media:play_pause` (`next`, `previous`, `stop`, `volume_up`, `volume_down`, `mute`), `dpi:stage_up`, `dpi:cycle`, `dpi:clutch:400`, `profile:cycle`, `disabled`.
+- `onboard_slot = 1..4`: a profil az egér beépített memóriájába is kiíródik (a Synapse színei szerint 1 piros, 2 zöld, 3 kék, 4 cián). Így program nélkül, a profilgombbal is elérhető. A szolgáltatás csak akkor ír, ha a profil megváltozott.
 
 ## Eszköz-azonosítók
 

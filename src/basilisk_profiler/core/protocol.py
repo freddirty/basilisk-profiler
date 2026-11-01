@@ -25,8 +25,8 @@ REPORT_LEN = 90
 ARGS_LEN = 80
 DEFAULT_TRANSACTION_ID = 0x1F
 
-# Storage slot (first argument of most commands). 0x01 is the live profile; 00/C0
-# answers for 0x01..0x05, so 0x02..0x05 are taken to be the onboard profile slots.
+# Storage slot (first argument of most commands). 0x01 is the live profile; 0x02..0x05 are
+# the four onboard slots (Synapse's On-Board Memory list, top to bottom; capture 2).
 STORE_LIVE = 0x01
 ONBOARD_STORES = (0x02, 0x03, 0x04, 0x05)
 
@@ -54,9 +54,37 @@ class DeviceMode(enum.IntEnum):
 
 
 class ActionType(enum.IntEnum):
-    MOUSE_BUTTON = 0x01
+    DISABLED = 0x00
+    MOUSE_BUTTON = 0x01  # also wheel: 9 = scroll up (capture 2)
     KEYBOARD = 0x02
     DPI = 0x06
+    PROFILE = 0x07
+    CONSUMER = 0x0A  # HID consumer page usage (media keys)
+    REPEAT_SCROLL = 0x0E  # factory action of the wheel tilts; not modelled further
+    SCROLL_MODE = 0x12  # 01 = toggle tactile / free spin (factory action of button 0x6A)
+
+
+class DpiFunction(enum.IntEnum):
+    STAGE_UP = 0x01
+    CLUTCH = 0x05  # hold for a fixed DPI; payload carries x, y
+    CYCLE_UP = 0x06  # factory action of the DPI button
+
+
+class ProfileFunction(enum.IntEnum):
+    CYCLE_UP = 0x04  # factory action of the profile button
+
+
+class ButtonId(enum.IntEnum):
+    """Device button ids (02/0C, 02/8C). Left/right click are not mapped here on purpose."""
+    WHEEL_CLICK = 0x03
+    BUTTON4 = 0x04  # rear side button
+    BUTTON5 = 0x05  # front side button
+    PROFILE = 0x0E  # underside
+    CLUTCH = 0x0F  # sensitivity clutch (thumb), Synapse DKM_SB_02
+    TILT_LEFT = 0x34
+    TILT_RIGHT = 0x35
+    DPI_CYCLE = 0x60
+    SCROLL_MODE = 0x6A
 
 
 def crc(frame: bytes) -> int:
@@ -208,6 +236,13 @@ def set_dpi_stages(stages: DpiStages, **kw) -> Report:
     return Report(0x04, 0x06, bytes(body), **kw)
 
 
+def set_dpi_xy(x: int, y: int | None = None, store: int = STORE_LIVE, **kw) -> Report:
+    """04/05: the current DPI (Synapse writes it next to the stage table)."""
+    y = x if y is None else y
+    return Report(0x04, 0x05, bytes([store]) + x.to_bytes(2, 'big') + y.to_bytes(2, 'big')
+                  + b'\x00\x00', **kw)
+
+
 def get_dpi_stages(store: int = STORE_LIVE, **kw) -> Report:
     return Report(0x04, 0x86, _args(store, size=ARGS_LEN), **kw)
 
@@ -251,6 +286,56 @@ class KeyAction:
 
 
 @dataclass(frozen=True)
+class DisabledAction:
+    action_type = ActionType.DISABLED
+
+    def payload(self) -> bytes:
+        return b''
+
+
+@dataclass(frozen=True)
+class ConsumerAction:
+    usage: int  # HID consumer page, e.g. 0xCD play/pause
+
+    action_type = ActionType.CONSUMER
+
+    def payload(self) -> bytes:
+        return self.usage.to_bytes(2, 'big')
+
+
+@dataclass(frozen=True)
+class DpiAction:
+    function: int  # DpiFunction
+    dpi: int | None = None  # CLUTCH only; same value for x and y
+
+    action_type = ActionType.DPI
+
+    def payload(self) -> bytes:
+        if self.function == DpiFunction.CLUTCH:
+            value = (self.dpi or 400).to_bytes(2, 'big')
+            return bytes([self.function]) + value + value
+        return bytes([self.function])
+
+
+@dataclass(frozen=True)
+class ProfileAction:
+    function: int  # ProfileFunction
+
+    action_type = ActionType.PROFILE
+
+    def payload(self) -> bytes:
+        return bytes([self.function])
+
+
+@dataclass(frozen=True)
+class ScrollModeAction:
+    action_type = ActionType.SCROLL_MODE
+
+    def payload(self) -> bytes:
+        return b''
+
+
+@dataclass(frozen=True)
 class RawAction:
     """An action type this module does not model yet; kept so it round-trips."""
     type: int
@@ -264,7 +349,8 @@ class RawAction:
         return self.data
 
 
-Action = MouseButtonAction | KeyAction | RawAction
+Action = (MouseButtonAction | KeyAction | DisabledAction | ConsumerAction | DpiAction
+          | ProfileAction | ScrollModeAction | RawAction)
 
 
 @dataclass(frozen=True)
@@ -300,6 +386,69 @@ def parse_button_mapping(report: Report) -> ButtonMapping:
         action = MouseButtonAction(data[0])
     elif action_type == ActionType.KEYBOARD and length == 2:
         action = KeyAction(usage=data[1], modifiers=data[0])
+    elif action_type == ActionType.DISABLED and length == 0:
+        action = DisabledAction()
+    elif action_type == ActionType.CONSUMER and length == 2:
+        action = ConsumerAction(int.from_bytes(data, 'big'))
+    elif action_type == ActionType.DPI and length == 1 and data[0] != DpiFunction.CLUTCH:
+        action = DpiAction(data[0])
+    elif (action_type == ActionType.DPI and length == 5 and data[0] == DpiFunction.CLUTCH
+          and data[1:3] == data[3:5]):
+        action = DpiAction(DpiFunction.CLUTCH, int.from_bytes(data[1:3], 'big'))
+    elif action_type == ActionType.PROFILE and length == 1:
+        action = ProfileAction(data[0])
+    elif action_type == ActionType.SCROLL_MODE and data == b'':
+        action = ScrollModeAction()
     else:
         action = RawAction(action_type, data)
     return ButtonMapping(button, action, store=store, hypershift=bool(hypershift))
+
+
+# --- onboard memory (06/8E) -----------------------------------------------------
+
+@dataclass(frozen=True)
+class MemoryInfo:
+    total: int  # bytes
+    free: int
+
+    @property
+    def free_percent(self) -> float:
+        return 100 * self.free / self.total if self.total else 0.0
+
+
+def get_memory_info(**kw) -> Report:
+    return Report(0x06, 0x8E, _args(size=14), **kw)
+
+
+def parse_memory_info(response: Report) -> MemoryInfo:
+    """Answer layout ``00 64 | total (4 BE) | free (4 BE) | 00 01 00``, e.g. Synapse's
+    "Available 99.67%" = 0x4BC00 of 0x4C000."""
+    a = response.args
+    return MemoryInfo(total=int.from_bytes(a[2:6], 'big'), free=int.from_bytes(a[6:10], 'big'))
+
+
+# --- active profile slot (05/04, 05/84, 05/81) -----------------------------------
+# The mouse uses exactly one store at a time: the live slot 0x01 (LED white) or an onboard
+# slot (0x02 red .. 0x05 cyan). The profile button steps through them; writes to a store
+# that is not active have no visible effect until it is selected.
+
+def get_active_profile(**kw) -> Report:
+    return Report(0x05, 0x84, _args(size=2), **kw)
+
+
+def parse_active_profile(response: Report) -> int:
+    return response.args[0]
+
+
+def set_active_profile(store: int, **kw) -> Report:
+    return Report(0x05, 0x04, _args(store, size=2), **kw)
+
+
+def get_profile_list(**kw) -> Report:
+    """05/81 -> ``count, store ids...`` e.g. ``05 01 02 03 04 05``."""
+    return Report(0x05, 0x81, _args(size=2), **kw)
+
+
+def parse_profile_list(response: Report) -> list[int]:
+    count = response.args[0]
+    return list(response.args[1:1 + count])

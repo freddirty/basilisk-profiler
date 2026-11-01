@@ -30,7 +30,7 @@ A Hypershift nincs a scope-ban.
 Sok parancs első argumentuma egy tárolóhely-azonosító:
 
 - `0x01` = az aktív (élő) beállítás. Minden módosítás ide íródik, ez azonnal érvényes.
-- `0x03`, `0x05` (és valószínűleg `0x02`, `0x04`) = **beépített profilhelyek** az egér memóriájában. Profilváltáskor a Synapse a profilt a hozzá tartozó helyre **és** a 0x01-re is kiírja.
+- `0x02`–`0x05` = a **4 beépített profilhely** az egér memóriájában (2. rögzítés). A Synapse „On-Board Memory” listájában ezek sorrendben: 1. hely piros = 0x02, 2. zöld = 0x03, 3. kék = 0x04, 4. cián = 0x05. Profilváltáskor a Synapse a profilt a hozzá tartozó helyre **és** a 0x01-re is kiírja.
 - Az openrazer-ben ugyanez a bájt a `VARSTORE` (0x01).
 
 ## Azonosított parancsok
@@ -49,7 +49,13 @@ Sok parancs első argumentuma egy tárolóhely-azonosító:
 | 07/80 | akkuszint | válasz `00 ff` = 100% | egyezik |
 | 07/84 | töltés állapota | válasz `00 00` = nem tölt | egyezik |
 | 00/84 | eszközmód olvasása | válasz `03 00` = **driver mode** | egyezik (00/04 = írás) |
-| 00/C0 | profilhely infó? | `[store,0]` → `[store,08]` | tisztázandó |
+| 00/C0 | profilhely infó (lekérdezés) | `[store,0]` → `[store,08]` a 0x01–0x05 helyekre, 0x06-ra `00` | jelentése nem kell a működéshez |
+| 04/05 | aktuális DPI | `store, X(2), Y(2), 0, 0` – a Synapse a beépített helyre a stage-tábla mellé írja | egyezik (`set_dpi_xy`) |
+| 05/02, 05/03 | profilhely előkészítése (beépített helyre íráskor) | `[store]` | – |
+| 05/08 | a profil neve/azonosítója a beépített helyen | `store, offset(2), 00, FA, 64 bájt adat` – a Synapse GUID-ot, a profil nevét és hash-t ír ide | – (a működéshez nem kell) |
+| 05/04 · 05/84 | aktív hely kiválasztása / lekérdezése | `[store, 0]` – lásd „Az aktív hely” | – |
+| 05/81 | a helyek listája | → `05 01 02 03 04 05` | – |
+| 06/8E | beépített memória kihasználtsága | válasz `00 64 | összes(4) | szabad(4) | 00 01 00`, pl. 0x4C000 / 0x4BC00 = „Available 99.67%” | – |
 | 00/BF | a dockhoz párosított eszköz | válasz `02 01 00 ab 00 ff ff` – benne a 0x00AB (vezeték nélküli Basilisk V3 Pro PID) | – |
 
 ### Gombkiosztás (02/0C) – részletesen
@@ -60,16 +66,30 @@ Sok parancs első argumentuma egy tárolóhely-azonosító:
 |---|---|---|
 | 0x01 | egérgomb | `[egérgomb száma]` – pl. `01 05` = Mouse Button 5 (gyári) |
 | 0x02 | billentyű | `[módosító bitmaszk, HID usage]` – a módosító a szokásos HID bitmaszk (0x01 = bal Ctrl) |
-| 0x06 | DPI-funkció? | `05 05 01 90 01 90` – a gombra 400×400 DPI (a „Sensitivity Clutch”?) – tisztázandó |
+| 0x00 | letiltva | – (hossz 0) |
+| 0x06 | DPI-funkció | `01` = fokozat fel; `06` = fokozatok körbe (a DPI-gomb gyári funkciója); `05 X(2) Y(2)` = érzékenység-clutch az adott DPI-vel (a hüvelykujj-gomb gyári funkciója, 400 DPI) |
+| 0x07 | profilfunkció | `04` = következő profil (a profilgomb gyári funkciója) |
+| 0x0A | multimédia | `[HID consumer usage, 2 bájt BE]`, pl. `00 CD` = lejátszás/szünet |
+| 0x0E | ismétlődő görgetés | `68 00 14` balra, `69 00 14` jobbra – a görgődöntés gyári funkciója |
+| 0x12 | görgő mód váltás | `01` – a görgő mód gomb (0x6A) gyári funkciója (02/8C-vel kiolvasva) |
+
+Az egérgomb típusban a 9-es szám a görgetés fel („Scroll Up”).
 
 Gomb-azonosítók a rögzítésből:
 
 | gomb id | gomb | bizonyíték |
 |---|---|---|
+| 0x03 | görgőkattintás | 2. rögzítés, B1 → KEY_1; gyári: egérgomb 3 |
 | 0x04 | Button4 (hátsó oldalgomb) | KEY_R (0x15) a „general” profilban |
 | 0x05 | Button5 (elülső oldalgomb) | **14:30:27 → `01 05 00 02 02 00 25` = KEY_8 (HID 0x25)** |
-| 0x0F | DKM_SB_02 (alsó oldalsó gomb) | KEY_E (0x08); a browser profilban Ctrl+W (`01 1a`) |
-| 0x34 | ismeretlen gomb | KEY_G (0x0a) |
+| 0x0E | profilváltó gomb (alul) | B6 → KEY_6; gyári: profilfunkció `04` |
+| 0x0F | érzékenység-clutch (hüvelykujj, Synapse: DKM_SB_02) | KEY_E (0x08); a browser profilban Ctrl+W (`01 1a`) |
+| 0x34 | görgő döntése balra | B2 → KEY_2; gyári: `0E 68 00 14` |
+| 0x35 | görgő döntése jobbra | B3 → KEY_3; gyári: `0E 69 00 14` |
+| 0x60 | DPI-fokozat váltó gomb | B5 → KEY_5; gyári: DPI-funkció `06` |
+| 0x6A | görgő mód gomb (racsnis/sima) | B4 → KEY_4; gyári funkciója még nem látszott |
+
+A bal és a jobb klikk ID-ját szándékosan nem kezeljük: így egy profil sem veheti el az elsődleges gombokat.
 
 A billentyűkódok szabványos HID Usage ID-k (0x04 = A … 0x1D = Z, 0x1E = 1 … 0x27 = 0).
 
@@ -89,6 +109,35 @@ A billentyűkódok szabványos HID Usage ID-k (0x04 = A … 0x1D = Z, 0x1E = 1 �
 
 Az 1a lépés (a 3. stage értékének átírása 1600-ra) nem történt meg, ezért a stage-érték átírását külön nem láttuk. Ugyanakkor minden stage-módosítás a teljes `04/06` táblát küldi, tehát a formátum ismert.
 
+## 2. rögzítés (2026-11-01 19:28–19:37, USBPcap2, 7-es eszköz)
+
+Nyers rögzítés: csak helyben (`captures/`). Dekódolva: `data/session2/`.
+
+| idő | lépés | megfigyelés |
+|---|---|---|
+| 19:29:30 | „Teszt” profil létrehozása | írás az élő helyre (0x01) |
+| 19:30:10 | A1: „Teszt” a beépített 2. (zöld) helyre | `05/03`, `02/14`, `00/C0`, `02/17`, `06/8E`, `05/02`, 4× `05/08` (név, GUID, hash), `04/05`, `04/06`, `0F/04`, `06/8E` – mind a **0x03** helyre |
+| 19:31:01 | A4: profilgomb (1.) | EP 0x82: `04 50` → a Synapse a 0x04 (kék, ARPG 1) hely tartalmát írja a 0x04-re és a 0x01-re |
+| 19:31:19 | A4: profilgomb (2.) | ugyanígy a 0x05 (cián, Browser) |
+| 19:32:45–19:33:35 | B1–B6: gomb ID-k | lásd a gombtáblát (a Synapse minden kiosztott gombot újraír a 0x03 és a 0x01 helyre) |
+| 19:34:30–19:36:53 | C1–C6: kimenettípusok (a hüvelykujj-gombon) | egérgomb 4, multimédia `00CD`, DPI fokozat fel, görgetés fel (egérgomb 9), letiltva, vissza a clutch-ra |
+
+**Az aktív hely (hardveres próba, 19:00, Synapse nélkül, normal mode):**
+
+- Az egér egyszerre pontosan egy helyet használ: az élő helyet (0x01, a LED **fehér**) vagy egy beépítettet (0x02 piros, 0x03 zöld, 0x04 kék, 0x05 cián). A profilgomb ezeken lépked körbe: fehér → piros → zöld → kék → cián → fehér.
+- A **nem aktív** helyre írás nem látszik. Ha pl. a cián hely aktív, az élő helyre (0x01) írt kiosztást az egér figyelmen kívül hagyja. A korábbi (M3) próba csak azért működött, mert akkor épp a fehér hely volt aktív.
+- `05/84` → `[store]` az aktív hely; a profilgomb megnyomása után 05 → 01 lett.
+- `05/04 [store, 0]` kiválasztja az aktív helyet. Kipróbálva: 05 → cián LED, a gomb a cián hely kiosztását küldte; 01 → fehér LED, az élő hely kiosztása.
+- `05/81` → `05 01 02 03 04 05` (a helyek száma és listája). A `05/80` és a `05/8A` válasza `05`; a jelentésük nem kell.
+- Driver mode-ban (Synapse) az egér csak a profilgomb eseményét küldi, és a Synapse másolja a következő hely tartalmát az élő helyre.
+
+**A mi programunk ezért:**
+- A beépített helyhez rendelt profilokat beírja a 0x02–0x05 helyekre, de csak változáskor.
+- Ablakváltáskor, ha a profil beépített helyen van, csak kiválasztja azt a helyet (05/04).
+- Ha a profil nincs beépített helyen, kiírja az élő helyre, és a fehér helyet teszi aktívvá.
+- A profilgombos kézi váltás a következő ablakváltásig érvényes.
+- Kilépéskor visszaállítja azt a helyet, ami induláskor aktív volt, és normal mode-ot hagy.
+
 ## Következmények a tervezéshez
 
 1. Az alap protokoll (keret, CRC, DPI, fényerő, akku, eszközmód) megegyezik az openrazer-rel, így Linuxon a kód közvetlenül hidraw-on keresztül írható.
@@ -96,12 +145,12 @@ Az 1a lépés (a 3. stage értékének átírása 1600-ra) nem történt meg, ez
 3. Az alkalmazásfüggő automatikus váltáshoz elég a 0x01-es (élő) helyre írni: egy teljes profil (DPI-tábla + kb. 10 gomb) kb. 15 riport, ez ~1 mp. Opcionálisan használhatók a beépített helyek is.
 4. Az egér driver mode-ban (`00/84 → 03`) van, amíg a Synapse fut. Saját eszközünkkel meg kell vizsgálni, hogy normal mode-ban is megmaradnak-e a kiosztások.
 
-## Nyitott kérdések / következő rögzítés
+## Nyitott kérdések
 
-- 02/14–17–16 pontos jelentése; a 00/C0 parancs.
-- A gomb-ID-k teljes listája (bal/jobb/középső gomb, görgő, DPI-gombok, a hüvelykujj-gombok).
-- Egyéb kimenettípusok: egérgomb, multimédia, DPI-funkciók, makró.
-- Az aktív beépített profil kiválasztása (melyik parancs, ha van).
-- A többi Razer-billentyűkód (report 4) és a report 5 (`hardwareEventReportID`) tartalma.
+- 02/14–17–16 pontos jelentése (valószínűleg a makró-/Hypershift-tábla kezelése; a mi írásainkhoz eddig nem kellett).
+- ~~A görgő mód gomb (0x6A) gyári funkciója~~: típus 0x12, adat `01` (kiolvasva).
+- A DPI fokozat le (valószínűleg `06 02`) és a görgetés le (valószínűleg egérgomb 10): nem láttuk, ezért a program még nem kínálja.
+- A többi Razer-billentyűkód (report 4) és a report 5 (`hardwareEventReportID`, pl. `05 31 fa 00 00 01`) tartalma.
+- ~~A gomb-ID-k teljes listája~~, ~~egyéb kimenettípusok~~, ~~hány beépített hely van~~: a 2. rögzítés megválaszolta.
 - ~~Driver mode nélkül (normal mode) a profilgomb vajon a beépített helyek között vált-e magától?~~ **Igen**: a felhasználó szerint Linuxon, Synapse nélkül az egér gombjával lehet profilt váltani. A beépített profilhelyek tehát önállóan is működnek; a driver mode csak átirányítja a gombot a hosthoz.
 - Hogyan lehet parancsból kiválasztani az aktív beépített profilhelyet (00/C0? vagy egy még nem látott parancs)? Továbbá: hány hely van, és tárol-e a hely LED-színt/nevet?

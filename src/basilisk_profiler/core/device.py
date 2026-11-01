@@ -21,8 +21,9 @@ CONTROL_INTERFACE = 0
 REPORT_ID = 0x00
 
 # Synapse reads the answer ~30-60 ms after writing; a busy device answers with status 0x01.
+# After many flash writes (e.g. restoring all onboard slots) it can stay busy for seconds.
 RESPONSE_DELAY = 0.03
-BUSY_RETRIES = 10
+BUSY_RETRIES = 150
 
 
 class DeviceError(RuntimeError):
@@ -154,6 +155,12 @@ class RazerDevice:
 
     def set_button(self, mapping: p.ButtonMapping) -> None:
         self.transact(p.set_button_mapping(mapping))
+
+    def active_profile(self) -> int:
+        return p.parse_active_profile(self.transact(p.get_active_profile()))
+
+    def set_active_profile(self, store: int) -> None:
+        self.transact(p.set_active_profile(store))
 
     def firmware_version(self) -> str:
         return p.parse_firmware_version(self.transact(p.get_firmware_version()))

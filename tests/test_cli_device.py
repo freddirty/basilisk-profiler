@@ -65,7 +65,7 @@ def test_transact_reports_failure():
 
 def test_transact_gives_up_when_always_busy():
     with pytest.raises(DeviceError, match='busy'):
-        device(busy=100).transact(p.get_device_mode())
+        device(busy=10_000).transact(p.get_device_mode())
 
 
 def test_dpi_round_trip_through_fake():
@@ -125,16 +125,47 @@ def test_stages_json_round_trip():
     assert cli.stages_from_json(cli.stages_to_json(stages)) == stages
 
 
-def test_backup_restore(tmp_path):
+def test_backup_restore_legacy_live_only(tmp_path):
     stages = p.DpiStages(tuple(p.DpiStage(v, v) for v in (400, 1600, 1800)), active=3)
     dev = device(answer=p.set_dpi_stages(stages).args.ljust(p.ARGS_LEN, b'\x00'))
     backup = tmp_path / 'backup.json'
-    cli.cmd_backup(dev, cli.build_parser().parse_args(['backup', str(backup)]))
-    dev.handle.sent.clear()
-    data = json.loads(backup.read_text())
-    data['buttons'] = {'0x05': 'mouse:5'}
-    backup.write_text(json.dumps(data))
+    backup.write_text(json.dumps({'dpi': cli.stages_to_json(stages),
+                                  'buttons': {'0x05': 'mouse:5'}}))
     cli.cmd_restore(dev, cli.build_parser().parse_args(['restore', str(backup)]))
     commands = [p.Report.from_bytes(s[1:]).command for s in dev.handle.sent]
     assert commands == [(0x04, 0x06), (0x02, 0x0C), (0x04, 0x86)]
     assert dev.handle.sent[0][1:] == p.set_dpi_stages(stages).to_bytes()
+
+
+class SlotDevice(FakeHandle):
+    """Answers 04/86 and 02/8C per store, like the mouse."""
+
+    def get_feature_report(self, report_id, length):
+        request = p.Report.from_bytes(self.sent[-1][1:])
+        store = request.args[0]
+        if request.command == (0x04, 0x86):
+            stages = p.DpiStages((p.DpiStage(400 * store, 400 * store),), active=1, store=store)
+            args = p.set_dpi_stages(stages).args
+        elif request.command == (0x02, 0x8C):
+            args = p.set_button_mapping(p.ButtonMapping(
+                request.args[1], p.KeyAction(0x04 + store), store=store)).args
+        else:
+            args = request.args
+        return [report_id, *p.Report(*request.command, args, status=p.Status.SUCCESS,
+                                     transaction_id=request.transaction_id).to_bytes()]
+
+
+def test_backup_all_slots_and_restore(tmp_path):
+    dev = RazerDevice(SlotDevice(), sleep=lambda _: None)
+    backup = tmp_path / 'all.json'
+    cli.cmd_backup(dev, cli.build_parser().parse_args(['backup', str(backup), '--all']))
+    data = json.loads(backup.read_text())
+    assert list(data['slots']) == ['0x01', '0x02', '0x03', '0x04', '0x05']
+    assert data['slots']['0x03']['buttons']['0x05'] == 'd'  # KEY_A + 3
+    assert data['slots']['0x04']['dpi']['stages'] == [[1600, 1600]]
+    dev.handle.sent.clear()
+    cli.cmd_restore(dev, cli.build_parser().parse_args(['restore', str(backup)]))
+    writes = [p.Report.from_bytes(s[1:]) for s in dev.handle.sent]
+    button_writes = [r for r in writes if r.command == (0x02, 0x0C)]
+    assert {r.args[0] for r in button_writes} == {1, 2, 3, 4, 5}
+    assert len(button_writes) == 5 * len(cli.BUTTON_IDS)
