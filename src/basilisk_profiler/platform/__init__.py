@@ -23,6 +23,14 @@ def list_windows():
     return []
 
 
+def autostart():
+    """Module with is_enabled() / set_enabled(bool), or None where not supported yet."""
+    if sys.platform == 'win32':
+        from .win import autostart as win_autostart
+        return win_autostart
+    return None
+
+
 def foreground_watcher(callback):
     """Calls ``callback(WindowInfo)`` whenever the active window changes."""
     if sys.platform == 'win32':

@@ -1,0 +1,63 @@
+name: Release
+
+# v* tag: build the Windows installer and publish a GitHub Release with it.
+# Pull requests touching packaging: build only and keep the installer as a workflow artifact.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(python -c "import re;print(re.search(r'__version__ = .(.+?).$', open('src/basilisk_profiler/__init__.py').read(), re.M).group(1))")" >> "$GITHUB_OUTPUT"
+          fi
+      - run: pip install .[gui] pyinstaller
+      - run: pyinstaller packaging/windows/basilisk_profiler.spec --noconfirm
+      - name: Smoke test the frozen build
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\BasiliskProfiler\BasiliskProfiler.exe -ArgumentList '--no-tray','--config',"$env:RUNNER_TEMP\c\config.toml" -PassThru
+          Start-Sleep 8
+          if ($p.HasExited) { Get-Content "$env:RUNNER_TEMP\c\basilisk-profiler.log" -ErrorAction SilentlyContinue; throw "exited early: $($p.ExitCode)" }
+          Stop-Process $p -Force
+          Get-Content "$env:RUNNER_TEMP\c\basilisk-profiler.log"
+      - name: Build installer
+        shell: pwsh
+        run: iscc /DAppVersion=${{ steps.version.outputs.version }} packaging\windows\installer.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/BasiliskProfiler-*-setup.exe
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/BasiliskProfiler-*-setup.exe --title "$GITHUB_REF_NAME" --generate-notes
+
+  # Linux .deb (ubuntu-22.04 / Mint 21) comes after the Windows version is complete.
+  linux-deb:
+    if: false
+    runs-on: ubuntu-22.04
+    steps:
+      - run: echo "not implemented yet"

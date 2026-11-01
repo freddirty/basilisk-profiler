@@ -4,3 +4,5 @@ captures/
 __pycache__/
 backups/
 .conda/
+build/
+dist/

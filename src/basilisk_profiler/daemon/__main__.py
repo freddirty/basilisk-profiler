@@ -19,6 +19,23 @@ from .service import Service
 log = logging.getLogger('basilisk_profiler')
 
 
+def single_instance(path: Path):
+    """Exclusive lock on ``path``; None if another daemon holds it. Released on exit."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, 'a+')  # noqa: SIM115 - kept open for the process lifetime
+    try:
+        if sys.platform == 'win32':
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
 def run_headless(service: Service) -> None:
     stop = False
 
@@ -51,9 +68,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--no-tray', action='store_true', help='run without the tray icon')
     parser.add_argument('-v', '--verbose', action='store_true')
     args = parser.parse_args(argv)
+    log_options = {}
+    if sys.stderr is None:  # pythonw / frozen windowed build: no console
+        args.config.parent.mkdir(parents=True, exist_ok=True)
+        log_options['filename'] = args.config.parent / 'basilisk-profiler.log'
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format='%(asctime)s %(levelname)s %(message)s')
+                        format='%(asctime)s %(levelname)s %(message)s', **log_options)
 
+    lock = single_instance(args.config.parent / 'daemon.lock')
+    if lock is None:
+        log.warning('another instance is already running')
+        return 1
     cfg.ensure_exists(args.config)
     service = Service(args.config)
     watcher = foreground_watcher(service.on_window)
