@@ -1,13 +1,19 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""List Razer 90-byte feature-report commands from a tshark field dump (stdin).
+"""List Razer 90-byte feature-report commands from a tshark field dump on stdin.
 
-Input lines: frame.time_epoch, usb.bmRequestType, usb.setup.bRequest, usb.irp_info.direction, usb.data_fragment / usbhid.data
+Input columns: frame.time_epoch, usb.bmRequestType, usb.setup.bRequest,
+usb.irp_info.direction, usb.data_fragment (or usb.control.Response).
+Arguments are class+id pairs to hide, e.g. ``0f03`` for Chroma frame updates.
 """
-import sys, datetime
+import datetime
+import sys
 
-skip = {tuple(bytes.fromhex(x)) for x in sys.argv[1:]}  # class+id pairs to hide, e.g. 0f03
+# PowerShell pipes may prepend a BOM, sometimes mis-decoded as cp1252
+BOM_CHARS = ''.join(map(chr, (0xFEFF, 0xEF, 0xBB, 0xBF)))
+
+skip = {tuple(bytes.fromhex(x)) for x in sys.argv[1:]}
 for line in sys.stdin:
-    f = line.lstrip('﻿ï»¿').rstrip('\n').split('\t')
+    f = line.lstrip(BOM_CHARS).rstrip('\n').split('\t')
     if len(f) < 5:
         continue
     ts, rt, req, dirn, data = f[:5]

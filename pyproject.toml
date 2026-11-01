@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "basilisk-profiler"
+version = "0.0.1"
+description = "Open-source profile manager for the Razer Basilisk V3 Pro (Windows + Linux)"
+readme = "README.md"
+license = "GPL-2.0-or-later"
+requires-python = ">=3.11"
+authors = [{ name = "Attila K" }]
+dependencies = [
+    "hidapi>=0.14",
+    "tomli-w>=1.0",
+    "pywin32>=306; sys_platform == 'win32'",
+    "python-xlib>=0.33; sys_platform == 'linux'",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/freddirty/basilisk-profiler"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/basilisk_profiler"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.format]
+quote-style = "single"
