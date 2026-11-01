@@ -48,9 +48,9 @@ from .keymap import action_from_key, key_name
 from .mouse_view import MouseView
 
 BUTTON_TITLES = {
-    'button4': 'Hátsó oldalgomb (Button4)',
-    'button5': 'Elülső oldalgomb (Button5)',
-    'side_bottom': 'Alsó oldalgomb',
+    'button4': 'Hátsó oldalgomb (Mouse Button 4)',
+    'button5': 'Elülső oldalgomb (Mouse Button 5)',
+    'side_bottom': 'Érzékenység-clutch (hüvelykujj-gomb)',
 }
 RULE_TITLES = {'match_process': 'Program', 'match_class': 'Ablakosztály (regex)',
                'match_title': 'Ablakcím (regex)'}

@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from ..core import config as cfg
+from ..gui.errors import install_excepthook, setup_logging
 from ..platform import foreground_watcher
 from .service import Service
 
@@ -68,12 +69,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--no-tray', action='store_true', help='run without the tray icon')
     parser.add_argument('-v', '--verbose', action='store_true')
     args = parser.parse_args(argv)
-    log_options = {}
-    if sys.stderr is None:  # pythonw / frozen windowed build: no console
-        args.config.parent.mkdir(parents=True, exist_ok=True)
-        log_options['filename'] = args.config.parent / 'basilisk-profiler.log'
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format='%(asctime)s %(levelname)s %(message)s', **log_options)
+    setup_logging(args.config.parent / 'basilisk-profiler.log', args.verbose)
+    install_excepthook()
 
     lock = single_instance(args.config.parent / 'daemon.lock')
     if lock is None:

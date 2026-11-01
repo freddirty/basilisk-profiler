@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Mouse photo with clickable button areas and Synapse-style callout labels.
+"""Mouse drawing with clickable button areas and Synapse-style callout labels.
 
-The photo (gui/assets/basilisk_v3_pro.jpg) is a reference picture of the real mouse; if
-the repository is ever published it may have to be replaced by an own drawing. Hotspot
-coordinates are given in the original 1211x727 photo; the shipped image is the region
-SOURCE_CROP of it, scaled down.
+The drawing (gui/assets/basilisk_v3_pro_lines.png) is an edge-traced alpha mask made from
+a reference photo by tools/photo_to_lineart.py; it is tinted with the palette's text
+colour so it follows light and dark themes. Hotspot coordinates are given in the original
+1211x727 photo; the shipped image is the region SOURCE_CROP of it, scaled down.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from ..core.model import BUTTON_IDS
 
-PHOTO = Path(__file__).parent / 'assets' / 'basilisk_v3_pro.jpg'
+PHOTO = Path(__file__).parent / 'assets' / 'basilisk_v3_pro_lines.png'
 SOURCE_CROP = QRectF(100, 40, 1010, 640)
 ACCENT = QColor('#44d62c')
 DIM = QColor('#8a8a8a')
@@ -35,15 +35,18 @@ class Hotspot:
     editable: bool = True
 
 
+# Names follow Synapse's button map; only the side buttons are editable so far.
 HOTSPOTS = (
-    Hotspot('right_click', 'Jobb klikk', QRectF(150, 70, 420, 95), 'right', False),
-    Hotspot('wheel', 'Görgő (döntéssel)', QRectF(272, 112, 100, 78), 'right', False),
-    Hotspot('dpi', 'DPI-gombok', QRectF(470, 138, 130, 56), 'right', False),
+    Hotspot('right_click', 'Jobb klikk', QRectF(160, 80, 100, 46), 'left', False),
+    Hotspot('wheel', 'Görgő (kattintás, döntés)', QRectF(272, 112, 100, 78), 'right', False),
+    Hotspot('scroll_mode', 'Görgő mód (racsnis / sima)', QRectF(479, 140, 52, 42), 'right',
+            False),
+    Hotspot('dpi_cycle', 'DPI-fokozat váltás', QRectF(547, 140, 53, 42), 'right', False),
     Hotspot('left_click', 'Bal klikk', QRectF(130, 196, 500, 140), 'left', False),
-    Hotspot('button5', 'Elülső oldalgomb', QRectF(298, 366, 214, 40), 'left'),
-    Hotspot('button4', 'Hátsó oldalgomb', QRectF(512, 386, 196, 62), 'left'),
-    Hotspot('side_bottom', 'Hüvelykujj-gomb (clutch)', QRectF(318, 404, 108, 66), 'left'),
-    Hotspot('profile', 'Profilgomb (alul)', QRectF(560, 600, 160, 40), 'right', False),
+    Hotspot('button5', 'Elülső oldalgomb (Mouse 5)', QRectF(298, 366, 214, 40), 'left'),
+    Hotspot('button4', 'Hátsó oldalgomb (Mouse 4)', QRectF(512, 386, 196, 62), 'left'),
+    Hotspot('side_bottom', 'Érzékenység-clutch', QRectF(318, 404, 108, 66), 'left'),
+    Hotspot('profile', 'Profilváltó gomb (alul)', QRectF(560, 600, 160, 40), 'right', False),
 )
 
 
@@ -53,6 +56,7 @@ class MouseView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.photo = QPixmap(str(PHOTO))
+        self._tint: tuple[int, QPixmap] | None = None
         self.labels: dict[str, str] = {}
         self.selected: str | None = None
         self.hover: str | None = None
@@ -69,6 +73,19 @@ class MouseView(QWidget):
         names = {v: k for k, v in BUTTON_IDS.items()}
         self.selected = names.get(button)
         self.update()
+
+    def _drawing(self) -> QPixmap:
+        """The line mask filled with the current text colour (cached per colour)."""
+        color = self.palette().text().color()
+        if self._tint is None or self._tint[0] != color.rgba():
+            pixmap = QPixmap(self.photo)
+            painter = QPainter(pixmap)
+            painter.drawPixmap(0, 0, self.photo)  # second pass: stronger lines when scaled down
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(pixmap.rect(), color)
+            painter.end()
+            self._tint = (color.rgba(), pixmap)
+        return self._tint[1]
 
     # --- geometry ----------------------------------------------------------------
 
@@ -134,7 +151,7 @@ class MouseView(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        painter.drawPixmap(self._photo_rect().toRect(), self.photo)
+        painter.drawPixmap(self._photo_rect().toRect(), self._drawing())
         labels = self._label_rects()
         photo = self._photo_rect()
         for h in HOTSPOTS:
