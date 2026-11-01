@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 from ..core import config as cfg
+from .errors import install_excepthook, setup_logging
 from .main_window import MainWindow
 
 
@@ -16,6 +17,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='basilisk-profiler-gui')
     parser.add_argument('--config', type=Path, default=cfg.config_path())
     args = parser.parse_args(argv)
+    setup_logging(args.config.parent / 'basilisk-profiler-gui.log')
+    install_excepthook()
     app = QApplication(sys.argv)
     window = MainWindow(args.config)
     window.show()
