@@ -2,3 +2,5 @@ captures/
 *.pcap
 *.pcapng
 __pycache__/
+backups/
+.conda/

@@ -11,7 +11,7 @@ license = "GPL-2.0-or-later"
 requires-python = ">=3.11"
 authors = [{ name = "Attila K" }]
 dependencies = [
-    "hidapi>=0.14",
+    "hidapi>=0.14; sys_platform != 'win32'",  # Windows uses hid.dll directly
     "tomli-w>=1.0",
     "pywin32>=306; sys_platform == 'win32'",
     "python-xlib>=0.33; sys_platform == 'linux'",

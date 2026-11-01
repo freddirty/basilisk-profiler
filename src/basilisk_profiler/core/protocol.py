@@ -25,9 +25,10 @@ REPORT_LEN = 90
 ARGS_LEN = 80
 DEFAULT_TRANSACTION_ID = 0x1F
 
-# Storage slot (first argument of most commands). 0x01 is the live profile; the
-# onboard profile slots seen in captures are 0x03 and 0x05 (range not confirmed yet).
+# Storage slot (first argument of most commands). 0x01 is the live profile; 00/C0
+# answers for 0x01..0x05, so 0x02..0x05 are taken to be the onboard profile slots.
 STORE_LIVE = 0x01
+ONBOARD_STORES = (0x02, 0x03, 0x04, 0x05)
 
 MAX_DPI_STAGES = 5
 DPI_MIN = 100
@@ -139,6 +140,19 @@ def get_device_mode(**kw) -> Report:
 
 def parse_device_mode(response: Report) -> int:
     return response.args[0]
+
+
+def get_firmware_version(**kw) -> Report:
+    return Report(0x00, 0x81, _args(size=2), **kw)
+
+
+def parse_firmware_version(response: Report) -> str:
+    return f'{response.args[0]}.{response.args[1]:02d}'
+
+
+def get_slot_info(store: int, **kw) -> Report:
+    """Query 00/C0. Answers 0x08 for stores 0x01..0x05 and 0x00 beyond; meaning not settled."""
+    return Report(0x00, 0xC0, _args(store, size=2), **kw)
 
 
 # --- power (07/80, 07/84) -------------------------------------------------------
@@ -268,6 +282,13 @@ def set_button_mapping(mapping: ButtonMapping, **kw) -> Report:
     if len(body) > BUTTON_MAPPING_SIZE:
         raise ProtocolError('button action payload too long')
     return Report(0x02, 0x0C, body + bytes(BUTTON_MAPPING_SIZE - len(body)), **kw)
+
+
+def get_button_mapping(button: int, store: int = STORE_LIVE, hypershift: bool = False,
+                       **kw) -> Report:
+    """Query (02/8C); the answer has the same layout as 02/0C."""
+    return Report(0x02, 0x8C, _args(store, button, int(hypershift), size=BUTTON_MAPPING_SIZE),
+                  **kw)
 
 
 def parse_button_mapping(report: Report) -> ButtonMapping:
