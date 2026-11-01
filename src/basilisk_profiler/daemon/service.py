@@ -7,6 +7,8 @@ timer or by the headless loop.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import queue
 import time
@@ -16,7 +18,7 @@ from pathlib import Path
 from ..core import config as cfg
 from ..core import protocol as p
 from ..core.device import DeviceError, RazerDevice
-from ..core.model import Config, Profile, WindowInfo
+from ..core.model import Config, Profile, WindowInfo, onboard_store
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +47,11 @@ class Service:
         self.window = WindowInfo()
         self.active: Profile | None = None  # last profile written to the device
         self.paused = False
+        # onboard slot -> hash of what was last written there; persisted so a restart does
+        # not rewrite the mouse's flash memory
+        self.state_path = config_path.with_name('onboard-state.json')
+        self._onboard_written: dict[str, str] = self._load_state()
+        self._onboard_pending = False
         self.reload_config(force=True)
 
     # --- inputs ----------------------------------------------------------------
@@ -73,6 +80,8 @@ class Service:
             profile, due = self._pending
             if self._clock() >= due and self._apply(profile):
                 self._pending = None
+        if self._onboard_pending and not self.paused and self._sync_onboard():
+            self._onboard_pending = False
 
     def shutdown(self) -> None:
         """Leave the mouse in normal mode so its profile button cycles onboard slots."""
@@ -109,6 +118,7 @@ class Service:
             return False
         self.active = None  # a reloaded profile may have new contents: write it again
         self._schedule(self._wanted(), now=True)
+        self._onboard_pending = True
         self._notify()
         return True
 
@@ -131,18 +141,50 @@ class Service:
                 self._next_open = self._clock() + REOPEN_INTERVAL
         return self._device
 
-    def _apply(self, profile: Profile) -> bool:
+    def _write(self, profile: Profile, store: int) -> bool:
         device = self._device_or_none()
         if device is None:
             return False
         try:
-            for report in profile.reports():
+            for report in profile.reports(store):
                 device.transact(report)
         except (OSError, DeviceError) as e:
-            log.warning('writing profile %r failed: %s', profile.name, e)
+            log.warning('writing profile %r to store 0x%02x failed: %s', profile.name, store, e)
             device.close()
             self._device = None
             self._next_open = self._clock() + REOPEN_INTERVAL
+            return False
+        return True
+
+    def _sync_onboard(self) -> bool:
+        """Write changed onboard profiles to their slots; True when all are up to date."""
+        if self.config is None:
+            return True
+        for slot, profile in sorted(self.config.onboard().items()):
+            digest = _digest(profile, onboard_store(slot))
+            if self._onboard_written.get(str(slot)) == digest:
+                continue
+            if not self._write(profile, onboard_store(slot)):
+                return False
+            log.info('profile %r written to onboard slot %d', profile.name, slot)
+            self._onboard_written[str(slot)] = digest
+            self._save_state()
+        return True
+
+    def _load_state(self) -> dict[str, str]:
+        try:
+            return json.loads(self.state_path.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def _save_state(self) -> None:
+        try:
+            self.state_path.write_text(json.dumps(self._onboard_written, indent=2))
+        except OSError as e:
+            log.warning('could not save %s: %s', self.state_path, e)
+
+    def _apply(self, profile: Profile) -> bool:
+        if not self._write(profile, p.STORE_LIVE):
             return False
         log.info('profile %r applied (%s)', profile.name, self.window.process or '-')
         self.active = profile
@@ -152,3 +194,8 @@ class Service:
     def _notify(self) -> None:
         if self._on_change:
             self._on_change(self)
+
+
+def _digest(profile: Profile, store: int) -> str:
+    """Identifies exactly what writing ``profile`` to ``store`` sends to the device."""
+    return hashlib.sha1(b''.join(r.to_bytes() for r in profile.reports(store))).hexdigest()

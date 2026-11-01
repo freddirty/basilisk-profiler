@@ -6,7 +6,7 @@ import pytest
 from basilisk_profiler.core import config as cfg
 from basilisk_profiler.core import keys
 from basilisk_profiler.core import protocol as p
-from basilisk_profiler.core.model import Rule, WindowInfo, button_id
+from basilisk_profiler.core.model import DEFAULT_ACTIONS, Rule, WindowInfo, button_id
 
 
 def example():
@@ -96,8 +96,9 @@ def test_button_ids():
 def test_profile_reports():
     general = example().profiles['general']
     commands = [r.command for r in general.reports()]
-    # DPI, then button4/button5 from the profile and side_bottom's factory default
-    assert commands == [(0x04, 0x06), (0x02, 0x0C), (0x02, 0x0C), (0x02, 0x0C)]
+    # the DPI table, then one 02/0C per button: the profile's own and factory defaults
+    assert commands[0] == (0x04, 0x06)
+    assert commands[1:] == [(0x02, 0x0C)] * len(DEFAULT_ACTIONS)
 
 
 def test_unset_buttons_get_factory_defaults():
@@ -115,3 +116,25 @@ def test_raw_action_round_trips_through_config(tmp_path):
     path = tmp_path / 'c.toml'
     cfg.save(config, path)
     assert cfg.load(path) == config
+
+
+@pytest.mark.parametrize('text', [
+    'disabled', 'mouse:9', 'media:play_pause', 'media:0x0183', 'dpi:stage_up', 'dpi:cycle',
+    'dpi:clutch:800', 'profile:cycle', 'ctrl+shift+t', 'raw:0e:680014',
+])
+def test_action_syntax_round_trips(text):
+    from basilisk_profiler.core.model import format_action, parse_any_action
+    assert format_action(parse_any_action(text)) == text
+
+
+@pytest.mark.parametrize('text', ['media:nope', 'dpi:turbo', 'dpi:clutch:50'])
+def test_bad_action_syntax(text):
+    from basilisk_profiler.core.model import parse_action
+    with pytest.raises(ValueError):
+        parse_action(text)
+
+
+def test_new_button_names():
+    assert button_id('wheel_click') == 0x03
+    assert button_id('scroll_mode') == 0x6A
+    assert button_id('profile') == 0x0E

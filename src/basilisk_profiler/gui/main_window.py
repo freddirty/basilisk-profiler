@@ -51,7 +51,15 @@ BUTTON_TITLES = {
     'button4': 'Hátsó oldalgomb (Mouse Button 4)',
     'button5': 'Elülső oldalgomb (Mouse Button 5)',
     'side_bottom': 'Érzékenység-clutch (hüvelykujj-gomb)',
+    'wheel_click': 'Görgőkattintás',
+    'tilt_left': 'Görgő döntése balra',
+    'tilt_right': 'Görgő döntése jobbra',
+    'scroll_mode': 'Görgő mód gomb (racsnis / sima)',
+    'dpi_cycle': 'DPI-fokozat váltó gomb',
+    'profile': 'Profilváltó gomb (alul)',
 }
+ONBOARD_CHOICES = ((None, 'Nincs (csak a program váltja)'), (1, '1. hely (piros)'),
+                   (2, '2. hely (zöld)'), (3, '3. hely (kék)'), (4, '4. hely (cián)'))
 RULE_TITLES = {'match_process': 'Program', 'match_class': 'Ablakosztály (regex)',
                'match_title': 'Ablakcím (regex)'}
 
@@ -76,85 +84,158 @@ class KeyCaptureEdit(QLineEdit):
             self.captured.emit(action)
 
 
+MOUSE_CHOICES = ((1, 'Bal gomb'), (2, 'Jobb gomb'), (3, 'Középső gomb'), (4, 'Vissza (4)'),
+                 (5, 'Előre (5)'), (9, 'Görgetés fel'))
+MEDIA_CHOICES = (('play_pause', 'Lejátszás / szünet'), ('next', 'Következő szám'),
+                 ('previous', 'Előző szám'), ('stop', 'Leállítás'),
+                 ('volume_up', 'Hangerő fel'), ('volume_down', 'Hangerő le'),
+                 ('mute', 'Némítás'))
+DPI_CHOICES = (('dpi:stage_up', 'DPI-fokozat fel'), ('dpi:cycle', 'DPI-fokozatok körbe'),
+               ('dpi:clutch', 'Érzékenység-clutch (lenyomva tartva)'))
+
+
 class ButtonEditor(QGroupBox):
-    changed = Signal(object)  # action string or None (= factory default)
+    """Picks one action for a button; emits it in config syntax, or None for the default."""
+
+    changed = Signal(object)
+
+    MODES = ('default', 'mouse', 'key', 'media', 'dpi', 'profile', 'disabled')
 
     def __init__(self, parent=None):
         super().__init__('Gomb', parent)
-        self.mode_default = QRadioButton('Alapértelmezett (gyári funkció)')
-        self.mode_mouse = QRadioButton('Egérgomb')
-        self.mode_key = QRadioButton('Billentyű / billentyűkombináció')
+        titles = ('Alapértelmezett (gyári funkció)', 'Egérgomb', 'Billentyű / kombináció',
+                  'Multimédia', 'DPI-funkció', 'Következő profil', 'Letiltva')
+        self.radios = {}
         self.group = QButtonGroup(self)
-        for i, radio in enumerate((self.mode_default, self.mode_mouse, self.mode_key)):
-            self.group.addButton(radio, i)
+        for i, (mode, title) in enumerate(zip(self.MODES, titles, strict=True)):
+            self.radios[mode] = QRadioButton(title)
+            self.group.addButton(self.radios[mode], i)
+        self.mode_default = self.radios['default']
+        self.mode_mouse = self.radios['mouse']
+        self.mode_key = self.radios['key']
         self.mouse_button = QComboBox()
-        for n, label in ((1, 'Bal gomb'), (2, 'Jobb gomb'), (3, 'Középső gomb'),
-                         (4, 'Vissza (4)'), (5, 'Előre (5)')):
+        for n, label in MOUSE_CHOICES:
             self.mouse_button.addItem(label, n)
         self.key = KeyCaptureEdit()
+        self.media = QComboBox()
+        for name, label in MEDIA_CHOICES:
+            self.media.addItem(label, name)
+        self.dpi_function = QComboBox()
+        for value, label in DPI_CHOICES:
+            self.dpi_function.addItem(label, value)
+        self.clutch_dpi = QSpinBox()
+        self.clutch_dpi.setRange(p.DPI_MIN, p.DPI_MAX)
+        self.clutch_dpi.setSingleStep(50)
+        self.clutch_dpi.setSuffix(' DPI')
+        self.clutch_dpi.setValue(400)
         self.other = QLabel()
         self.other.setWordWrap(True)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.mode_default)
-        row = QHBoxLayout()
-        row.addWidget(self.mode_mouse)
-        row.addWidget(self.mouse_button, 1)
-        layout.addLayout(row)
+        for radio, widget in ((self.mode_mouse, self.mouse_button),
+                              (self.radios['media'], self.media)):
+            row = QHBoxLayout()
+            row.addWidget(radio)
+            row.addWidget(widget, 1)
+            layout.addLayout(row)
         layout.addWidget(self.mode_key)
         layout.addWidget(self.key)
+        layout.addWidget(self.radios['dpi'])
+        layout.addWidget(self.dpi_function)
+        layout.addWidget(self.clutch_dpi)
+        layout.addWidget(self.radios['profile'])
+        layout.addWidget(self.radios['disabled'])
         layout.addWidget(self.other)
         layout.addStretch(1)
 
         self.group.idClicked.connect(lambda _: self._emit())
-        self.mouse_button.currentIndexChanged.connect(lambda _: self._mouse_changed())
-        self.key.captured.connect(lambda _: self._key_changed())
+        self.mouse_button.currentIndexChanged.connect(lambda _: self._picked('mouse'))
+        self.media.currentIndexChanged.connect(lambda _: self._picked('media'))
+        self.dpi_function.currentIndexChanged.connect(lambda _: self._picked('dpi'))
+        self.clutch_dpi.valueChanged.connect(lambda _: self._picked('dpi'))
+        self.key.captured.connect(lambda _: self._picked('key'))
         self._loading = False
+
+    def mode(self) -> str | None:
+        checked = self.group.checkedId()
+        return self.MODES[checked] if checked >= 0 else None
 
     def load(self, title: str, action: str | None) -> None:
         self._loading = True
         self.setTitle(title)
         self.other.setText('')
+        self.key.clear()
+        mode = 'default'
         if action is None:
-            self.mode_default.setChecked(True)
+            pass
         elif action.startswith('mouse:'):
-            self.mode_mouse.setChecked(True)
-            self.mouse_button.setCurrentIndex(max(self.mouse_button.findData(int(action[6:])), 0))
+            mode = 'mouse'
+            index = self.mouse_button.findData(int(action[6:]))
+            self.mouse_button.setCurrentIndex(max(index, 0))
+        elif action.startswith('media:'):
+            mode = 'media'
+            self.media.setCurrentIndex(max(self.media.findData(action[6:]), 0))
+        elif action.startswith('dpi:'):
+            mode = 'dpi'
+            base = 'dpi:clutch' if action.startswith('dpi:clutch') else action
+            self.dpi_function.setCurrentIndex(max(self.dpi_function.findData(base), 0))
+            if base == 'dpi:clutch':
+                self.clutch_dpi.setValue(int(action.split(':')[2]))
+        elif action == 'profile:cycle':
+            mode = 'profile'
+        elif action == 'disabled':
+            mode = 'disabled'
         elif action.startswith('raw:'):
-            self.mode_default.setChecked(False)
+            mode = None
+            self.other.setText(f'Ezt a funkciót még nem tudja szerkeszteni a program ({action}).')
+        else:
+            mode = 'key'
+            self.key.setText(action)
+        if mode is None:
             self.group.setExclusive(False)
             for b in self.group.buttons():
                 b.setChecked(False)
             self.group.setExclusive(True)
-            self.other.setText(f'Ezt a funkciót még nem tudja szerkeszteni a program ({action}).')
         else:
-            self.mode_key.setChecked(True)
-            self.key.setText(action)
-        if not action or not action.startswith('mouse:') and not action.startswith('raw:'):
-            self.mouse_button.setCurrentIndex(0)
-        if action is None or action.startswith(('mouse:', 'raw:')):
-            self.key.clear()
+            self.radios[mode].setChecked(True)
+        self._update_enabled()
         self._loading = False
 
-    def _mouse_changed(self):
+    def _update_enabled(self):
+        self.clutch_dpi.setEnabled(self.dpi_function.currentData() == 'dpi:clutch')
+
+    def _picked(self, mode: str):
+        self._update_enabled()
         if not self._loading:
-            self.mode_mouse.setChecked(True)
+            self.radios[mode].setChecked(True)
             self._emit()
 
-    def _key_changed(self):
-        if not self._loading:
-            self.mode_key.setChecked(True)
-            self._emit()
+    def action(self) -> str | None:
+        mode = self.mode()
+        if mode == 'mouse':
+            return f'mouse:{self.mouse_button.currentData()}'
+        if mode == 'key':
+            return self.key.text() or None
+        if mode == 'media':
+            return f'media:{self.media.currentData()}'
+        if mode == 'dpi':
+            value = self.dpi_function.currentData()
+            return f'{value}:{self.clutch_dpi.value()}' if value == 'dpi:clutch' else value
+        if mode == 'profile':
+            return 'profile:cycle'
+        if mode == 'disabled':
+            return 'disabled'
+        return None
 
     def _emit(self):
         if self._loading:
             return
-        if self.mode_default.isChecked():
+        mode = self.mode()
+        if mode == 'default':
             self.changed.emit(None)
-        elif self.mode_mouse.isChecked():
-            self.changed.emit(f'mouse:{self.mouse_button.currentData()}')
-        elif self.mode_key.isChecked() and self.key.text():
-            self.changed.emit(self.key.text())
+        elif (action := self.action()) is not None:
+            self.changed.emit(action)
 
 
 class DpiEditor(QGroupBox):
@@ -415,6 +496,14 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.profiles)
         left_layout.addLayout(prof_buttons)
         left_layout.addWidget(self.default_button)
+        self.onboard = QComboBox()
+        for slot, label in ONBOARD_CHOICES:
+            self.onboard.addItem(label, slot)
+        self.onboard.setToolTip('A beépített helyre írt profil az egérben marad: a program '
+                                'nélkül, akár másik gépen is a profilgombbal választható.')
+        self.onboard.currentIndexChanged.connect(self._onboard_changed)
+        left_layout.addWidget(QLabel('Beépített hely az egérben'))
+        left_layout.addWidget(self.onboard)
 
         # buttons tab
         self.mouse = MouseView()
@@ -470,7 +559,10 @@ class MainWindow(QMainWindow):
         self.profiles.blockSignals(True)
         self.profiles.clear()
         for name in self.draft.names():
-            item = QListWidgetItem(f'{name}  ★' if name == self.draft.default else name)
+            text = f'{name}  ★' if name == self.draft.default else name
+            if slot := self.draft.onboard_slot(name):
+                text += f'   [{slot}. hely]'
+            item = QListWidgetItem(text)
             item.setData(Qt.UserRole, name)
             self.profiles.addItem(item)
         self.profiles.blockSignals(False)
@@ -487,11 +579,22 @@ class MainWindow(QMainWindow):
         enabled = self.current is not None
         self.tabs.widget(0).setEnabled(enabled)
         self.tabs.widget(1).setEnabled(enabled)
+        self.onboard.setEnabled(enabled)
         if not enabled:
             return
         self._update_labels()
         self._select_button(self.current_button)
         self.dpi_editor.load(*self.draft.dpi(self.current))
+        self.onboard.blockSignals(True)
+        self.onboard.setCurrentIndex(max(self.onboard.findData(
+            self.draft.onboard_slot(self.current)), 0))
+        self.onboard.blockSignals(False)
+
+    def _onboard_changed(self, _index):
+        if self.current:
+            self.draft.set_onboard_slot(self.current, self.onboard.currentData())
+            self._refresh_profiles()
+            self._mark_dirty()
 
     def _update_labels(self):
         self.mouse.set_labels({b: describe_action(self.draft.button(self.current, b))

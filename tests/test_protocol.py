@@ -91,11 +91,53 @@ def test_mouse_button_mapping_round_trips():
     assert p.set_button_mapping(mapping, transaction_id=0x11).to_bytes() == report.to_bytes()
 
 
-def test_unknown_action_round_trips():
+def test_clutch_action_round_trips():
+    # 14:31:28: the thumb button's factory action, sensitivity clutch at 400 DPI
     report = p.Report.from_bytes(find('req', (0x02, 0x0C), 0x00))
     mapping = p.parse_button_mapping(report)
-    assert isinstance(mapping.action, p.RawAction)
+    assert mapping.button == p.ButtonId.CLUTCH
+    assert mapping.action == p.DpiAction(p.DpiFunction.CLUTCH, 400)
     assert p.set_button_mapping(mapping, transaction_id=0x00).to_bytes() == report.to_bytes()
+
+
+# argument bytes of 02/0C writes seen in capture 2 (store, button, hypershift, type, len, data)
+CAPTURE2_MAPPINGS = [
+    ('030f0001010400000000', p.ButtonId.CLUTCH, p.MouseButtonAction(4)),
+    ('030f000a0200cd000000', p.ButtonId.CLUTCH, p.ConsumerAction(0xCD)),
+    ('030f0006010100000000', p.ButtonId.CLUTCH, p.DpiAction(p.DpiFunction.STAGE_UP)),
+    ('030f0001010900000000', p.ButtonId.CLUTCH, p.MouseButtonAction(9)),
+    ('030f0000000000000000', p.ButtonId.CLUTCH, p.DisabledAction()),
+    ('0303000202001e000000', p.ButtonId.WHEEL_CLICK, p.KeyAction(0x1E)),
+    ('0334000202001f000000', p.ButtonId.TILT_LEFT, p.KeyAction(0x1F)),
+    ('03350002020020000000', p.ButtonId.TILT_RIGHT, p.KeyAction(0x20)),
+    ('036a0002020021000000', p.ButtonId.SCROLL_MODE, p.KeyAction(0x21)),
+    ('03600002020022000000', p.ButtonId.DPI_CYCLE, p.KeyAction(0x22)),
+    ('030e0002020023000000', p.ButtonId.PROFILE, p.KeyAction(0x23)),
+    ('05600006010600000000', p.ButtonId.DPI_CYCLE, p.DpiAction(p.DpiFunction.CYCLE_UP)),
+    ('050e0007010400000000', p.ButtonId.PROFILE, p.ProfileAction(p.ProfileFunction.CYCLE_UP)),
+    ('0534000e036800140000', p.ButtonId.TILT_LEFT, p.RawAction(0x0E, bytes.fromhex('680014'))),
+]
+
+
+@pytest.mark.parametrize('args,button,action', CAPTURE2_MAPPINGS)
+def test_capture2_mappings(args, button, action):
+    report = p.Report(0x02, 0x0C, bytes.fromhex(args))
+    mapping = p.parse_button_mapping(report)
+    assert (mapping.button, mapping.action) == (button, action)
+    assert p.set_button_mapping(mapping).args == report.args
+
+
+def test_memory_info():
+    answer = p.Report(0x06, 0x8E, bytes.fromhex('00640004c0000004bc0000000100'),
+                      status=p.Status.SUCCESS)
+    info = p.parse_memory_info(answer)
+    assert (info.total, info.free) == (0x4C000, 0x4BC00)
+    assert round(info.free_percent, 2) == 99.67
+
+
+def test_set_dpi_xy():
+    # 19:30:11: 04/05 03 0640 0640 0000 (slot 3, 1600 DPI)
+    assert p.set_dpi_xy(1600, store=0x03).args == bytes.fromhex('03064006400000')
 
 
 def test_get_button_mapping():

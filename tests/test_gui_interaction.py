@@ -57,9 +57,16 @@ def test_click_through_everything(window, monkeypatch):
         win.profiles.setCurrentRow(row)
         click_hotspots(win)
         editor = win.button_editor
-        for radio in (editor.mode_mouse, editor.mode_key, editor.mode_default):
-            radio.click()
+        for mode in editor.MODES:
+            editor.radios[mode].click()
         editor.mouse_button.setCurrentIndex(3)
+        editor.media.setCurrentIndex(2)
+        editor.radios['disabled'].click()
+        editor.dpi_function.setCurrentIndex((editor.dpi_function.currentIndex() + 1) % 3)
+        editor.dpi_function.setCurrentIndex(2)
+        editor.clutch_dpi.setValue(800)
+        assert editor.action() == 'dpi:clutch:800'
+        win.onboard.setCurrentIndex(2)
         editor.key.setFocus()
         QTest.keyClick(editor.key, Qt.Key_W, Qt.ControlModifier)
         QTest.keyClick(editor.key, Qt.Key_Exclam, Qt.ShiftModifier)
