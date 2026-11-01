@@ -33,7 +33,7 @@ from .model import (
     button_id,
     button_name,
     format_action,
-    parse_action,
+    parse_any_action,
 )
 
 APP_NAME = 'basilisk-profiler'
@@ -61,7 +61,8 @@ def parse(data: dict) -> Config:
             name = entry['name']
             if name in profiles:
                 raise ConfigError(f'duplicate profile {name!r}')
-            buttons = {button_id(b): parse_action(a) for b, a in entry.get('buttons', {}).items()}
+            buttons = {button_id(b): parse_any_action(a)
+                       for b, a in entry.get('buttons', {}).items()}
             profiles[name] = Profile(
                 name=name,
                 dpi_stages=tuple(entry['dpi_stages']) if 'dpi_stages' in entry else None,

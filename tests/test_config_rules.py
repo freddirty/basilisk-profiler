@@ -96,4 +96,22 @@ def test_button_ids():
 def test_profile_reports():
     general = example().profiles['general']
     commands = [r.command for r in general.reports()]
-    assert commands == [(0x04, 0x06), (0x02, 0x0C), (0x02, 0x0C)]
+    # DPI, then button4/button5 from the profile and side_bottom's factory default
+    assert commands == [(0x04, 0x06), (0x02, 0x0C), (0x02, 0x0C), (0x02, 0x0C)]
+
+
+def test_unset_buttons_get_factory_defaults():
+    browser = example().profiles['browser']
+    actions = {p.parse_button_mapping(r).button: p.parse_button_mapping(r).action
+               for r in browser.reports() if r.command == (0x02, 0x0C)}
+    assert actions[0x04] == p.MouseButtonAction(4)
+    assert actions[0x0F] == p.KeyAction(keys.usage('KEY_W'), keys.Modifier.LEFT_CTRL)
+
+
+def test_raw_action_round_trips_through_config(tmp_path):
+    data = {'profile': [{'name': 'a', 'buttons': {'0x34': 'raw:0e:680014'}}]}
+    config = cfg.parse(data)
+    assert config.profiles['a'].buttons[0x34] == p.RawAction(0x0E, bytes.fromhex('680014'))
+    path = tmp_path / 'c.toml'
+    cfg.save(config, path)
+    assert cfg.load(path) == config

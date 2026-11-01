@@ -44,20 +44,37 @@ class Tray:
         self.status = QAction('', menu, enabled=False)
         self.pause = QAction('Szüneteltetés', menu, checkable=True)
         self.pause.toggled.connect(service.set_paused)
-        open_config = QAction('Konfig megnyitása', menu)
+        settings = QAction('Beállítások…', menu)
+        settings.triggered.connect(self.open_settings)
+        open_config = QAction('Konfig szövegként', menu)
         open_config.triggered.connect(lambda: open_file(service.config_path))
         quit_action = QAction('Kilépés', menu)
         quit_action.triggered.connect(app.quit)
-        for action in (self.status, self.pause, open_config, quit_action):
+        for action in (self.status, self.pause, settings, open_config, quit_action):
             menu.addAction(action)
         self.menu = menu  # keep a reference: the tray does not own it
         self.tray.setContextMenu(menu)
+        self.tray.activated.connect(self._activated)
+        self.window = None
         service._on_change = lambda _s: self.refresh()
         self.timer = QTimer()
         self.timer.timeout.connect(service.tick)
         self.timer.start(TICK_MS)
         self.refresh()
         self.tray.show()
+
+    def open_settings(self) -> None:
+        from ..gui.main_window import MainWindow
+
+        if self.window is None or not self.window.isVisible():
+            self.window = MainWindow(self.service.config_path)
+        self.window.show()
+        self.window.raise_()
+        self.window.activateWindow()
+
+    def _activated(self, reason) -> None:
+        if reason in (QSystemTrayIcon.DoubleClick, QSystemTrayIcon.Trigger):
+            self.open_settings()
 
     def refresh(self) -> None:
         s = self.service

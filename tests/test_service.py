@@ -66,7 +66,7 @@ def test_default_profile_applied_at_start(env):
     service, clock, device, *_ = env
     service.tick()
     assert service.active.name == 'general'
-    assert [r.command for r in device.reports] == [(4, 6), (2, 0x0C), (2, 0x0C)]
+    assert [r.command for r in device.reports] == [(4, 6), (2, 0x0C), (2, 0x0C), (2, 0x0C)]
 
 
 def test_window_switch_is_debounced(env):
@@ -79,7 +79,7 @@ def test_window_switch_is_debounced(env):
     clock.now += svc.DEBOUNCE
     service.tick()
     assert service.active.name == 'browser'
-    assert len(device.reports) == 2
+    assert len(device.reports) == 3  # three buttons, no DPI table
 
 
 def test_quick_switch_back_writes_nothing(env):
@@ -106,7 +106,7 @@ def test_same_profile_not_rewritten(env):
         service.tick()
         clock.now += svc.DEBOUNCE
         service.tick()
-    assert len(device.reports) == 2  # written once for firefox, chrome uses the same profile
+    assert len(device.reports) == 3  # written once for firefox, chrome uses the same profile
 
 
 def test_pause_holds_writes(env):

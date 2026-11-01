@@ -67,6 +67,26 @@ def window_info(hwnd) -> WindowInfo:
     return WindowInfo(process=_process_name(hwnd), wm_class=cls.value, title=title.value)
 
 
+_EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+_user32.EnumWindows.argtypes = [_EnumWindowsProc, wintypes.LPARAM]
+_user32.IsWindowVisible.argtypes = [wintypes.HWND]
+_user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+
+
+def list_windows() -> list[WindowInfo]:
+    """Visible top-level windows with a title, for the rule editor's picker."""
+    found: list[WindowInfo] = []
+
+    @_EnumWindowsProc
+    def collect(hwnd, _):
+        if _user32.IsWindowVisible(hwnd) and _user32.GetWindowTextLengthW(hwnd) > 0:
+            found.append(window_info(hwnd))
+        return True
+
+    _user32.EnumWindows(collect, 0)
+    return found
+
+
 class ForegroundWatcher:
     def __init__(self, callback: Callable[[WindowInfo], None]):
         self._callback = callback
