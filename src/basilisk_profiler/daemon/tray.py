@@ -10,6 +10,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
+from ..platform import autostart
 from .service import Service
 
 TICK_MS = 100
@@ -50,7 +51,13 @@ class Tray:
         open_config.triggered.connect(lambda: open_file(service.config_path))
         quit_action = QAction('Kilépés', menu)
         quit_action.triggered.connect(app.quit)
-        for action in (self.status, self.pause, settings, open_config, quit_action):
+        actions = [self.status, self.pause, settings, open_config]
+        if (auto := autostart()) is not None:
+            start_with_os = QAction('Indítás a Windows-szal', menu, checkable=True)
+            start_with_os.setChecked(auto.is_enabled())
+            start_with_os.toggled.connect(auto.set_enabled)
+            actions.append(start_with_os)
+        for action in (*actions, quit_action):
             menu.addAction(action)
         self.menu = menu  # keep a reference: the tray does not own it
         self.tray.setContextMenu(menu)
