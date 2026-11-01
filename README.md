@@ -18,6 +18,18 @@ Nyílt forráskódú profilkezelő a **Razer Basilisk V3 Pro** egérhez (Mouse D
 | [`tools/razer_cmds.py`](tools/razer_cmds.py) | `tshark` mezőkimenetből listázza a 90 bájtos Razer feature reportokat |
 | [`tools/ldb.py`](tools/ldb.py) | a Synapse 4 IndexedDB (LevelDB `.ldb`, Snappy) táblájának kicsomagolója, tiszta Pythonban |
 
+## Használat (fejlesztői állapot)
+
+A Synapse-ból előbb ki kell lépni, mert ő is írja az egeret.
+
+```
+python -m basilisk_profiler.cli info              # firmware, mód, akku, DPI-fokozatok
+python -m basilisk_profiler.cli button 0x05 ctrl+t
+python -m basilisk_profiler.daemon                # háttérszolgáltatás tálcaikonnal
+```
+
+A háttérszolgáltatás konfigja: `%APPDATA%\basilisk-profiler\config.toml` (Windows), illetve `~/.config/basilisk-profiler/config.toml` (Linux). Első indításkor egy példafájl jön létre. A fájlt a szolgáltatás a változás után automatikusan újratölti. A gombnevek: `button4`, `button5`, `side_bottom`, vagy hexában, pl. `0x34`. A műveletek formája: `mouse:4`, `key:8`, `ctrl+w`, `ctrl+shift+t`.
+
 ## Eszköz-azonosítók
 
 | eszköz | VID:PID |

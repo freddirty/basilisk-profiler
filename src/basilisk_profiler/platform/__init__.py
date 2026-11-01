@@ -13,3 +13,12 @@ def hid_backend():
             raise
     from .win import hid as win_hid
     return win_hid
+
+
+def foreground_watcher(callback):
+    """Calls ``callback(WindowInfo)`` whenever the active window changes."""
+    if sys.platform == 'win32':
+        from .win.foreground import ForegroundWatcher
+    else:
+        from .linux.x11 import ForegroundWatcher
+    return ForegroundWatcher(callback)
