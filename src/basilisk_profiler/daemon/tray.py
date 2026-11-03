@@ -140,7 +140,13 @@ class Tray:
         self.dpi_popup = QAction('DPI-váltás jelzése', menu, checkable=True)
         self.dpi_popup.setChecked(self.ui.get('dpi_popup', True))
         self.dpi_popup.toggled.connect(lambda on: self.ui.set('dpi_popup', on))
-        actions = [self.status, self.pause, settings, open_config, self.dpi_popup]
+        self.dock_battery = QAction('Dokk: akkuszint-effekt', menu, checkable=True)
+        self.dock_battery.setEnabled(False)  # until the dock has been read
+        self.dock_battery.toggled.connect(self._dock_battery_toggled)
+        if (saved := self.ui.get('dock_battery', None)) is not None:
+            service.set_dock_battery(saved)  # re-applied if something else changed the dock
+        actions = [self.status, self.pause, settings, open_config, self.dpi_popup,
+                   self.dock_battery]
         if (auto := autostart()) is not None:
             start_with_os = QAction('Indítás a Windows-szal' if sys.platform == 'win32'
                                     else 'Indítás bejelentkezéskor', menu, checkable=True)
@@ -169,6 +175,10 @@ class Tray:
             if self.osd is None:
                 self.osd = Osd()
             self.osd.flash(f'DPI {status.dpi}{stage}')
+
+    def _dock_battery_toggled(self, on: bool) -> None:
+        self.ui.set('dock_battery', on)
+        self.service.set_dock_battery(on)
 
     def open_settings(self) -> None:
         from ..gui.main_window import MainWindow
@@ -202,5 +212,11 @@ class Tray:
         if s.config_error:
             lines.append(s.config_error)
         self.tray.setToolTip('\n'.join(lines))
+        if s.dock_battery is not None:
+            self.dock_battery.setEnabled(True)
+            if self.dock_battery.isChecked() != s.dock_battery:
+                self.dock_battery.blockSignals(True)
+                self.dock_battery.setChecked(s.dock_battery)
+                self.dock_battery.blockSignals(False)
         if self.window is not None and self.window.isVisible():
             self.window.set_live_status(' · '.join([text, *status_lines(s)]))

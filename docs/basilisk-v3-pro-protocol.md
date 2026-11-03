@@ -167,3 +167,10 @@ Kiegészítő lekérdezések: a `04/85` (arg.: hely) az aktuális DPI-t adja (`h
 - ~~A gomb-ID-k teljes listája~~, ~~egyéb kimenettípusok~~, ~~hány beépített hely van~~: a 2. rögzítés megválaszolta.
 - ~~Driver mode nélkül (normal mode) a profilgomb vajon a beépített helyek között vált-e magától?~~ **Igen**: a felhasználó szerint Linuxon, Synapse nélkül az egér gombjával lehet profilt váltani. A beépített profilhelyek tehát önállóan is működnek; a driver mode csak átirányítja a gombot a hosthoz.
 - Hogyan lehet parancsból kiválasztani az aktív beépített profilhelyet (00/C0? vagy egy még nem látott parancs)? Továbbá: hány hely van, és tárol-e a hely LED-színt/nevet?
+
+## A dokk saját világítása (Linux, 2026-11-03)
+
+- A dokk a **0xFF** transaction id-vel küldött parancsokra maga válaszol; 0x1F-fel a parancs az egérhez megy (LED-zónák 0x01/0x04/0x0A). A 0x3F és 0x9F időtúllépést ad.
+- A dokk egyetlen LED-zónája a **0x0F** (`0F/80` válasza: `0f 19 03 01 01`), fényereje `0F/84 [hely, 0f]` = 0xFF.
+- `0F/82 [hely, 0f]` az effektet adja: az 1-es hely a tartós beállítás (Synapse „akkuszint”: `01 0f 0d 01`, azaz **0x0D** effekt), a 0-s hely az éppen látható szín (statikus: `00 0f 01 00 00 01 R G B`; 80%-os akkunál `70 ff 00`).
+- `0F/02` ugyanilyen formában ír. A 0-s helyre írt statikus szín azonnal látszik; a 0x0D effekt a következő akkujelzésnél (pl. amikor az egér felébred) felülírja a saját színével.

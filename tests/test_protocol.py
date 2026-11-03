@@ -211,3 +211,19 @@ def test_scroll_mode_action_round_trips():
     assert mapping.button == p.ButtonId.SCROLL_MODE
     assert mapping.action == p.ScrollModeAction()
     assert p.set_button_mapping(mapping).args == report.args
+
+
+def test_dock_effect_commands():
+    req = p.set_dock_effect(p.BATTERY_EFFECT)
+    frame = req.to_bytes()
+    assert frame[1] == 0xFF and frame[5] == 4
+    assert frame[6:12] == bytes([0x0F, 0x02, 1, 0x0F, 0x0D, 1])
+    get = p.get_dock_effect()
+    assert get.transaction_id == 0xFF and get.command == (0x0F, 0x82)
+    assert get.args[:2] == bytes([1, 0x0F])
+    # answer seen on the dock: store 0, static 70 ff 00
+    answer = p.Report(0x0F, 0x82, bytes.fromhex('000f0100000170ff00000000'),
+                      transaction_id=0xFF, status=p.Status.SUCCESS)
+    effect = p.parse_dock_effect(answer)
+    assert effect.effect == p.EFFECT_STATIC and effect.params[3:6] == bytes([0x70, 0xFF, 0x00])
+    assert p.DockEffect.from_json(effect.to_json()) == effect

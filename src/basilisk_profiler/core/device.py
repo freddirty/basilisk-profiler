@@ -167,5 +167,11 @@ class RazerDevice:
     def set_active_profile(self, store: int) -> None:
         self.transact(p.set_active_profile(store))
 
+    def dock_effect(self, store: int = p.DOCK_STORE) -> p.DockEffect:
+        return p.parse_dock_effect(self.transact(p.get_dock_effect(store)))
+
+    def set_dock_effect(self, effect: p.DockEffect, store: int = p.DOCK_STORE) -> None:
+        self.transact(p.set_dock_effect(effect, store))
+
     def firmware_version(self) -> str:
         return p.parse_firmware_version(self.transact(p.get_firmware_version()))
