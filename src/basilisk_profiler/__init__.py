@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Profile manager for the Razer Basilisk V3 Pro."""
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 
 RAZER_VID = 0x1532
 PID_MOUSE_DOCK_PRO = 0x00A4

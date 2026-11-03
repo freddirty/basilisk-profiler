@@ -18,6 +18,7 @@ a = Analysis(  # noqa: F821
         'basilisk_profiler.platform.linux.x11',
         'basilisk_profiler.platform.linux.autostart',
         'basilisk_profiler.platform.linux.conflicts',
+        'basilisk_profiler.platform.linux.events',
     ],
     # 'hid' is hidapi's libusb build: it must never be used on Linux (see platform/__init__.py)
     excludes=['tkinter', 'hid', 'PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets',
