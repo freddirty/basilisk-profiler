@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Platform-specific backends (HID access, foreground window, autostart)."""
+import os
 import sys
 
 
@@ -67,4 +68,12 @@ def event_reader(callback):
     if sys.platform.startswith('linux'):
         from .linux.events import EventReader
         return EventReader(callback)
+    return None
+
+
+def cursor_overlay():
+    """Shows a custom pointer image (show(CursorImage) / hide()), or None where unsupported."""
+    if sys.platform.startswith('linux') and os.environ.get('DISPLAY'):
+        from .linux.cursor import CursorOverlay
+        return CursorOverlay()
     return None

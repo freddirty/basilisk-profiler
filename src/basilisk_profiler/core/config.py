@@ -12,6 +12,11 @@
     button4 = "ctrl+w"
     button5 = "key:8"
 
+    [[profile]]
+    name = "last epoch"
+    cursor = "yolomouse-pink.cur"   # own .cur file; relative = <config dir>/cursors/
+    cursor_scale = 2.0
+
     [[rule]]
     match_process = "firefox"    # or match_class / match_title (regex)
     profile = "browser"
@@ -26,6 +31,7 @@ from pathlib import Path
 
 import tomli_w
 
+from .cursor import SCALE_MAX, SCALE_MIN
 from .model import (
     Config,
     Profile,
@@ -69,7 +75,11 @@ def parse(data: dict) -> Config:
                 dpi_active=entry.get('dpi_active'),
                 buttons=buttons,
                 onboard_slot=entry.get('onboard_slot'),
+                cursor=entry.get('cursor') or None,
+                cursor_scale=float(entry.get('cursor_scale', 1.0)),
             )
+            if not SCALE_MIN <= profiles[name].cursor_scale <= SCALE_MAX:
+                raise ConfigError(f'{name}: cursor_scale must be {SCALE_MIN}..{SCALE_MAX}')
             profiles[name].dpi()  # validates DPI values and the active stage
         rules = tuple(Rule(profile=r['profile'], match_process=r.get('match_process'),
                            match_class=r.get('match_class'), match_title=r.get('match_title'))
@@ -102,6 +112,10 @@ def dump(config: Config) -> dict:
             entry['dpi_stages'] = list(prof.dpi_stages)
         if prof.dpi_active:
             entry['dpi_active'] = prof.dpi_active
+        if prof.cursor:
+            entry['cursor'] = prof.cursor
+            if prof.cursor_scale != 1.0:
+                entry['cursor_scale'] = prof.cursor_scale
         if prof.buttons:
             entry['buttons'] = {button_name(b): format_action(a)
                                 for b, a in sorted(prof.buttons.items())}

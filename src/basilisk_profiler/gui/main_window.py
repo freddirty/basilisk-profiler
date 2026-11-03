@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -40,6 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import config as cfg
+from ..core import cursor as cur
 from ..core import protocol as p
 from ..core import synapse_import
 from ..core.model import BUTTON_IDS, button_name
@@ -308,6 +310,107 @@ class DpiEditor(QGroupBox):
             self.changed.emit()
 
 
+class CursorEditor(QGroupBox):
+    """Own .cur file (e.g. YoloMouse's) shown instead of the pointer in this profile's windows."""
+    changed = Signal()
+
+    def __init__(self, config_dir: Path, parent=None):
+        super().__init__('Egyedi kurzor', parent)
+        self.setMinimumWidth(460)
+        self.config_dir = config_dir
+        self.enabled = QCheckBox('A profil ablakában egyedi kurzor legyen')
+        self.path = QLineEdit()
+        self.path.setPlaceholderText('pl. yolomouse-pink-huge.cur')
+        browse = QPushButton('Tallózás…')
+        browse.clicked.connect(self._browse)
+        self.browse = browse
+        self.scale = QDoubleSpinBox()
+        self.scale.setRange(cur.SCALE_MIN, cur.SCALE_MAX)
+        self.scale.setSingleStep(0.25)
+        self.scale.setSuffix(' ×')
+        self.preview = QLabel()
+        self.preview.setMinimumSize(160, 160)
+        self.preview.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.error = QLabel()
+        self.error.setStyleSheet('color: #c62828;')
+        self.error.setWordWrap(True)
+        note = QLabel('Kurzorképet a program nem tartalmaz: a saját .cur fájlodat válaszd '
+                      '(például a YoloMouse Cursors/Huge/2.cur fájlját). A relatív név a '
+                      f'{cur.cursor_dir(config_dir)} mappában keresendő. A kurzor csak akkor '
+                      'látszik, amikor a profilhoz tartozó ablak aktív.')
+        note.setWordWrap(True)
+        row = QHBoxLayout()
+        row.addWidget(self.path, 1)
+        row.addWidget(browse)
+        form = QFormLayout()
+        form.addRow(self.enabled)
+        form.addRow('Kurzorfájl', row)
+        form.addRow('Nagyítás', self.scale)
+        form.addRow('Előnézet', self.preview)
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(self.error)
+        layout.addWidget(note)
+        layout.addStretch(1)
+        self._loading = False
+        self.enabled.toggled.connect(self._changed)
+        self.path.editingFinished.connect(self._changed)
+        self.scale.valueChanged.connect(self._changed)
+
+    def load(self, path: str | None, scale: float) -> None:
+        self._loading = True
+        self.enabled.setChecked(bool(path))
+        self.path.setText(path or '')
+        self.scale.setValue(scale)
+        self._loading = False
+        self._refresh()
+
+    def value(self) -> tuple[str | None, float]:
+        path = self.path.text().strip()
+        if not (self.enabled.isChecked() and path):
+            return None, 1.0
+        return path, self.scale.value()
+
+    def _browse(self):
+        folder = cur.cursor_dir(self.config_dir)
+        start = str(folder if folder.is_dir() else Path.home())
+        name, _ = QFileDialog.getOpenFileName(self, 'Kurzorfájl', start,
+                                              'Kurzor (*.cur *.ico);;Minden fájl (*)')
+        if not name:
+            return
+        chosen = Path(name)
+        try:
+            text = str(chosen.relative_to(folder))
+        except ValueError:
+            text = str(chosen)
+        self.path.setText(text)
+        self.enabled.setChecked(True)
+        self._changed()
+
+    def _refresh(self):
+        on = self.enabled.isChecked()
+        for w in (self.path, self.browse, self.scale):
+            w.setEnabled(on)
+        self.preview.clear()
+        self.error.clear()
+        path, scale = self.value()
+        if not path:
+            return
+        try:
+            image = cur.load(cur.resolve(path, self.config_dir)).scaled(scale)
+        except cur.CursorError as e:
+            self.error.setText(str(e))
+            return
+        qimage = QImage(image.pixels, image.width, image.height, image.width * 4,
+                        QImage.Format_ARGB32_Premultiplied)
+        self.preview.setPixmap(QPixmap.fromImage(qimage.copy()))
+
+    def _changed(self, *_):
+        self._refresh()
+        if not self._loading:
+            self.changed.emit()
+
+
 class WindowPicker(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -525,12 +628,21 @@ class MainWindow(QMainWindow):
         dl.addWidget(self.dpi_editor)
         dl.addStretch(1)
 
+        # cursor tab
+        self.cursor_editor = CursorEditor(config_path.parent)
+        self.cursor_editor.changed.connect(self._cursor_changed)
+        cursor_tab = QWidget()
+        cl = QHBoxLayout(cursor_tab)
+        cl.addWidget(self.cursor_editor)
+        cl.addStretch(1)
+
         self.rules_tab = RulesTab(self.draft)
         self.rules_tab.changed.connect(self._mark_dirty)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(buttons_tab, 'Gombok')
         self.tabs.addTab(dpi_tab, 'DPI')
+        self.tabs.addTab(cursor_tab, 'Kurzor')
         self.tabs.addTab(self.rules_tab, 'Szabályok (automatikus váltás)')
 
         splitter = QSplitter()
@@ -585,12 +697,14 @@ class MainWindow(QMainWindow):
         enabled = self.current is not None
         self.tabs.widget(0).setEnabled(enabled)
         self.tabs.widget(1).setEnabled(enabled)
+        self.tabs.widget(2).setEnabled(enabled)
         self.onboard.setEnabled(enabled)
         if not enabled:
             return
         self._update_labels()
         self._select_button(self.current_button)
         self.dpi_editor.load(*self.draft.dpi(self.current))
+        self.cursor_editor.load(*self.draft.cursor(self.current))
         self.onboard.blockSignals(True)
         self.onboard.setCurrentIndex(max(self.onboard.findData(
             self.draft.onboard_slot(self.current)), 0))
@@ -664,6 +778,11 @@ class MainWindow(QMainWindow):
     def _dpi_changed(self):
         if self.current:
             self.draft.set_dpi(self.current, *self.dpi_editor.value())
+            self._mark_dirty()
+
+    def _cursor_changed(self):
+        if self.current:
+            self.draft.set_cursor(self.current, *self.cursor_editor.value())
             self._mark_dirty()
 
     # --- file ----------------------------------------------------------------------
