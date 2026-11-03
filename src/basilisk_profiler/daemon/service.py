@@ -13,11 +13,13 @@ import logging
 import queue
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..core import config as cfg
 from ..core import protocol as p
 from ..core.device import DeviceError, RazerDevice
+from ..core.events import BatteryLevel, DeviceEvent, DpiChanged
 from ..core.model import Config, Profile, WindowInfo, onboard_store
 
 log = logging.getLogger(__name__)
@@ -26,18 +28,40 @@ log = logging.getLogger(__name__)
 DEBOUNCE = 0.4
 # Retry interval while the mouse / dock is absent.
 REOPEN_INTERVAL = 5.0
+# Without an event reader (Windows) the DPI is polled; a sleeping mouse answers slowly.
+POLL_INTERVAL = 2.0
+POLL_BACKOFF = 15.0
+BATTERY_INTERVAL = 300.0
+
+
+@dataclass
+class LiveStatus:
+    """What the mouse is doing right now, for the tray and the settings window."""
+    dpi: int | None = None
+    stage: int | None = None  # 1-based
+    stage_count: int | None = None
+    battery: int | None = None  # percent
 
 
 class Service:
     def __init__(self, config_path: Path, *,
                  open_device: Callable[[], RazerDevice] = RazerDevice.open,
                  clock: Callable[[], float] = time.monotonic,
-                 on_change: Callable[[Service], None] | None = None):
+                 on_change: Callable[[Service], None] | None = None,
+                 poll_dpi: bool = True):
         self.config_path = config_path
         self._open_device = open_device
         self._clock = clock
         self._on_change = on_change
         self._events: queue.SimpleQueue[WindowInfo] = queue.SimpleQueue()
+        self._device_events: queue.SimpleQueue[DeviceEvent] = queue.SimpleQueue()
+        self.status = LiveStatus()
+        self._poll_dpi = poll_dpi
+        self._next_poll = 0.0
+        self._next_battery = 0.0
+        self._status_stale = True
+        # called with the new DPI when the user changes it with the DPI button
+        self.on_dpi_changed: Callable[[LiveStatus], None] | None = None
         self._device: RazerDevice | None = None
         self._next_open = 0.0
         self._config_mtime: float | None = None
@@ -60,6 +84,14 @@ class Service:
     def on_window(self, window: WindowInfo) -> None:
         """Thread-safe; called by the foreground watcher."""
         self._events.put(window)
+
+    def set_poll_dpi(self, poll: bool) -> None:
+        """Poll the DPI when no event reader reports the DPI button (Windows)."""
+        self._poll_dpi = poll
+
+    def on_device_event(self, event: DeviceEvent) -> None:
+        """Thread-safe; called by the platform's event reader."""
+        self._device_events.put(event)
 
     def set_paused(self, paused: bool) -> None:
         self.paused = paused
@@ -84,6 +116,7 @@ class Service:
             profile, due = self._pending
             if self._clock() >= due and self._apply(profile):
                 self._pending = None
+        self._update_status()
 
     def shutdown(self) -> None:
         """Give the mouse back as found: the slot that was active at start, normal mode."""
@@ -222,7 +255,66 @@ class Service:
             return False
         log.info('profile %r applied (%s)', profile.name, self.window.process or '-')
         self.active = profile
+        self._status_stale = True
         self._notify()
+        return True
+
+    def _update_status(self) -> None:
+        """Track DPI / stage / battery: from device events, else by polling."""
+        changed_by_user = False
+        while True:
+            try:
+                event = self._device_events.get_nowait()
+            except queue.Empty:
+                break
+            if isinstance(event, DpiChanged):
+                if event.x != self.status.dpi:
+                    changed_by_user = True
+                self.status.dpi = event.x
+                self._status_stale = True  # read the stage index for it
+            elif isinstance(event, BatteryLevel):
+                if event.percent != self.status.battery:
+                    self.status.battery = event.percent
+                    self._notify()
+        now = self._clock()
+        due_poll = self._poll_dpi and now >= self._next_poll
+        if (self._status_stale or due_poll) and self._device is not None:
+            before = (self.status.dpi, self.status.stage)
+            if self._read_dpi():
+                self._status_stale = False
+                self._next_poll = now + POLL_INTERVAL
+                if due_poll and not changed_by_user and before[0] is not None \
+                        and (self.status.dpi, self.status.stage) != before:
+                    changed_by_user = True
+                if (self.status.dpi, self.status.stage) != before:
+                    self._notify()
+            else:
+                self._next_poll = now + POLL_BACKOFF
+        if self._device is not None and now >= self._next_battery:
+            self._next_battery = now + BATTERY_INTERVAL
+            try:
+                battery = self._device.battery_percent()
+            except (OSError, DeviceError, p.ProtocolError) as e:
+                log.debug('battery read failed: %s', e)
+                self._next_battery = now + POLL_BACKOFF
+            else:
+                if battery != self.status.battery:
+                    self.status.battery = battery
+                    self._notify()
+        if changed_by_user and self.on_dpi_changed:
+            self.on_dpi_changed(self.status)
+
+    def _read_dpi(self) -> bool:
+        """Read the active slot's stage table; errors leave the device open (mouse asleep)."""
+        try:
+            store = self._device.active_profile()
+            stages = self._device.dpi_stages(store)
+        except (OSError, DeviceError, p.ProtocolError) as e:
+            log.debug('DPI read failed: %s', e)
+            return False
+        self.status.stage = stages.active
+        self.status.stage_count = len(stages.stages)
+        self.status.dpi = stages.stages[stages.active - 1].x
         return True
 
     def _notify(self) -> None:

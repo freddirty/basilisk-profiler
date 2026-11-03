@@ -60,3 +60,11 @@ def foreground_watcher(callback):
     else:
         from .linux.x11 import ForegroundWatcher
     return ForegroundWatcher(callback)
+
+
+def event_reader(callback):
+    """Reader of the dock's input events (DPI changes), or None: the service polls instead."""
+    if sys.platform.startswith('linux'):
+        from .linux.events import EventReader
+        return EventReader(callback)
+    return None
