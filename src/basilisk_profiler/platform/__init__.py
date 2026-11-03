@@ -4,7 +4,15 @@ import sys
 
 
 def hid_backend():
-    """hidapi if installed, else Windows' built-in hid.dll."""
+    """The HID module with the hidapi ``enumerate`` / ``device`` API for this platform.
+
+    Linux: cython-hidapi's ``hidraw`` module (kernel hidraw). Never its ``hid`` module there:
+    that is the libusb build, which detaches the kernel driver and takes the mouse away from
+    the desktop. Windows: hidapi if installed, else the built-in hid.dll wrapper.
+    """
+    if sys.platform.startswith('linux'):
+        import hidraw
+        return hidraw
     try:
         import hid
         return hid
@@ -13,6 +21,14 @@ def hid_backend():
             raise
     from .win import hid as win_hid
     return win_hid
+
+
+def conflicts() -> list[str]:
+    """Warnings about other software that would also write the mouse."""
+    if sys.platform.startswith('linux'):
+        from .linux.conflicts import warnings
+        return warnings()
+    return []
 
 
 def list_windows():

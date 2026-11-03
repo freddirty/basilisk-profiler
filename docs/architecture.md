@@ -95,13 +95,13 @@ profile = "general"
 
 | Terület | Windows | Linux Mint (Cinnamon, X11) |
 | --- | --- | --- |
-| Eszközelérés | hidapi → HidD_SetFeature / GetFeature a dock interfészén | hidapi (hidraw backend) → /dev/hidrawN; udev-szabály a 1532:00A4 / 00AA / 00AB eszközökre |
+| Eszközelérés | hidapi → HidD_SetFeature / GetFeature a dock interfészén | a cython-hidapi `hidraw` modulja → /dev/hidrawN (soha a libusb-s `hid` modul, mert az leválasztja az egér kernel-driverét); udev-szabály (`packaging/linux/70-basilisk-profiler.rules`) a 1532:00A4 / 00AA / 00AB eszközökre |
 | Profilgomb-esemény | HID input report olvasása (report ID 4) | Ugyanez hidraw-on |
 | Aktív ablak | SetWinEventHook(EVENT_SYSTEM_FOREGROUND) → folyamatnév, ablakcím | python-xlib: _NET_ACTIVE_WINDOW figyelése → WM_CLASS, _NET_WM_PID → folyamatnév, cím |
 | Tálca | Qt QSystemTrayIcon | Qt QSystemTrayIcon |
 | Automatikus indítás | HKCU\...\Run | ~/.config/autostart .desktop |
 | Konfig helye | %APPDATA%\basilisk-profiler\ | ~/.config/basilisk-profiler/ |
-| Ütközés | A Synapse-t le kell állítani, különben felülírja a beállításokat | Az OpenRazer mellett el kell érni a hidraw-ot; ellenőrizni kell |
+| Ütközés | A Synapse-t le kell állítani, különben felülírja a beállításokat | Ha az OpenRazer `razermouse` drivere vagy az `openrazer-daemon` fut, a CLI és a szolgáltatás figyelmeztet |
 
 ## Technológia és repo-szerkezet
 
@@ -126,7 +126,7 @@ basilisk-profiler/
   packaging/   windows/, debian/
 ```
 
-Kiadás: verziócímke (pl. `v0.1.0`) feltöltésekor a GitHub Actions megépíti a Windows-telepítőt (windows-latest) és a .deb csomagot (ubuntu-22.04, a Mint 21 alapja), majd GitHub Release-ként közzéteszi őket. Minden pull requesten lefutnak a tesztek (pytest) és a lint (ruff).
+Kiadás: verziócímke (pl. `v0.1.0`) feltöltésekor a GitHub Actions megépíti a Windows-telepítőt (windows-latest) és a .deb csomagot (ubuntu-24.04, a Mint 22 alapja), majd GitHub Release-ként közzéteszi őket. Minden pull requesten lefutnak a tesztek (pytest) és a lint (ruff).
 
 Licenc: GPL-2.0-or-later.
 
@@ -136,7 +136,7 @@ Licenc: GPL-2.0-or-later.
 - [ ] Hány beépített profilhely van, és mely ID-k?
 - [ ] A teljes gomb ID-lista és a többi kimenettípus (multimédia, DPI-funkciók, scroll)
 - [ ] A 02/14, 02/16, 02/17 és 00/C0 parancsok jelentése
-- [ ] Linuxon az OpenRazer mellett elérhető-e a hidraw, vagy le kell kapcsolni a razermouse modult?
+- [x] Linuxon az OpenRazer mellett elérhető-e a hidraw? A hidraw mindig elérhető, de a razermouse driver és a daemon felülírhatja a beállításokat, ezért figyelmeztetünk.
 - [ ] Normal mode-ban is olvasható-e a profilgomb eseménye?
 
 ## Mérföldkövek

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ..core import config as cfg
 from ..gui.errors import install_excepthook, setup_logging
-from ..platform import foreground_watcher
+from ..platform import conflicts, foreground_watcher
 from .service import Service
 
 log = logging.getLogger('basilisk_profiler')
@@ -77,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         log.warning('another instance is already running')
         return 1
     cfg.ensure_exists(args.config)
+    for warning in conflicts():
+        log.warning(warning)
     service = Service(args.config)
     watcher = foreground_watcher(service.on_window)
     watcher.start()

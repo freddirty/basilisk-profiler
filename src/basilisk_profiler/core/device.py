@@ -2,6 +2,7 @@
 """Talk to the mouse over HID feature reports (hidapi; hidraw backend on Linux)."""
 from __future__ import annotations
 
+import sys
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -96,7 +97,11 @@ class RazerDevice:
                 handle.close()
                 continue
             return device
-        raise DeviceError('could not open a control interface:\n  ' + '\n  '.join(errors))
+        message = 'could not open a control interface:\n  ' + '\n  '.join(errors)
+        if sys.platform.startswith('linux') and any('ermission' in e for e in errors):
+            message += ('\nNo access to /dev/hidraw*: install the udev rule '
+                        '(packaging/linux/70-basilisk-profiler.rules) and replug the dock.')
+        raise DeviceError(message)
 
     def close(self) -> None:
         self.handle.close()

@@ -20,7 +20,7 @@ Nyílt forráskódú profilkezelő a **Razer Basilisk V3 Pro** egérhez (Mouse D
 
 ## Használat (fejlesztői állapot)
 
-A Synapse-ból előbb ki kell lépni, mert ő is írja az egeret.
+A Synapse-ból előbb ki kell lépni, mert ő is írja az egeret. Linuxon a `/dev/hidraw*` eléréséhez telepíteni kell a udev-szabályt (`sudo cp packaging/linux/70-basilisk-profiler.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger`), és az OpenRazer ne kezelje az egeret.
 
 ```
 python -m basilisk_profiler.cli info              # firmware, mód, akku, DPI-fokozatok
