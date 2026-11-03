@@ -42,9 +42,7 @@ class EventReader:
         self._thread.start()
 
     def stop(self) -> None:
-        self._stop.set()
-        if self._thread:
-            self._thread.join(2)
+        self._stop.set()  # the daemon thread notices within one select timeout
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -70,7 +68,7 @@ class EventReader:
 
     def _read(self, fd: int) -> None:
         while not self._stop.is_set():
-            ready, _, _ = select.select([fd], [], [], 0.5)
+            ready, _, _ = select.select([fd], [], [], 5.0)  # blocks; wakes only for events
             if not ready:
                 continue
             try:

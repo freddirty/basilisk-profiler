@@ -28,10 +28,6 @@ log = logging.getLogger(__name__)
 DEBOUNCE = 0.4
 # Retry interval while the mouse / dock is absent.
 REOPEN_INTERVAL = 5.0
-# Without an event reader (Windows) the DPI is polled; a sleeping mouse answers slowly.
-POLL_INTERVAL = 2.0
-POLL_BACKOFF = 15.0
-BATTERY_INTERVAL = 300.0
 
 
 @dataclass
@@ -47,8 +43,7 @@ class Service:
     def __init__(self, config_path: Path, *,
                  open_device: Callable[[], RazerDevice] = RazerDevice.open,
                  clock: Callable[[], float] = time.monotonic,
-                 on_change: Callable[[Service], None] | None = None,
-                 poll_dpi: bool = True):
+                 on_change: Callable[[Service], None] | None = None):
         self.config_path = config_path
         self._open_device = open_device
         self._clock = clock
@@ -56,10 +51,7 @@ class Service:
         self._events: queue.SimpleQueue[WindowInfo] = queue.SimpleQueue()
         self._device_events: queue.SimpleQueue[DeviceEvent] = queue.SimpleQueue()
         self.status = LiveStatus()
-        self._poll_dpi = poll_dpi
-        self._next_poll = 0.0
-        self._next_battery = 0.0
-        self._status_stale = True
+        self._status_stale = True  # re-read DPI and battery at the next chance
         # called with the new DPI when the user changes it with the DPI button
         self.on_dpi_changed: Callable[[LiveStatus], None] | None = None
         self._device: RazerDevice | None = None
@@ -84,10 +76,6 @@ class Service:
     def on_window(self, window: WindowInfo) -> None:
         """Thread-safe; called by the foreground watcher."""
         self._events.put(window)
-
-    def set_poll_dpi(self, poll: bool) -> None:
-        """Poll the DPI when no event reader reports the DPI button (Windows)."""
-        self._poll_dpi = poll
 
     def on_device_event(self, event: DeviceEvent) -> None:
         """Thread-safe; called by the platform's event reader."""
@@ -260,7 +248,12 @@ class Service:
         return True
 
     def _update_status(self) -> None:
-        """Track DPI / stage / battery: from device events, else by polling."""
+        """Track DPI / stage / battery from device events; the device is never polled.
+
+        The status is read once when a profile is applied and once per DPI button event
+        (for the stage index). Without an event reader (Windows for now) the DPI shown is
+        the one from the last profile switch.
+        """
         changed_by_user = False
         while True:
             try:
@@ -268,39 +261,22 @@ class Service:
             except queue.Empty:
                 break
             if isinstance(event, DpiChanged):
-                if event.x != self.status.dpi:
-                    changed_by_user = True
+                changed_by_user = True
                 self.status.dpi = event.x
                 self._status_stale = True  # read the stage index for it
             elif isinstance(event, BatteryLevel):
                 if event.percent != self.status.battery:
                     self.status.battery = event.percent
                     self._notify()
-        now = self._clock()
-        due_poll = self._poll_dpi and now >= self._next_poll
-        if (self._status_stale or due_poll) and self._device is not None:
-            before = (self.status.dpi, self.status.stage)
-            if self._read_dpi():
-                self._status_stale = False
-                self._next_poll = now + POLL_INTERVAL
-                if due_poll and not changed_by_user and before[0] is not None \
-                        and (self.status.dpi, self.status.stage) != before:
-                    changed_by_user = True
-                if (self.status.dpi, self.status.stage) != before:
-                    self._notify()
-            else:
-                self._next_poll = now + POLL_BACKOFF
-        if self._device is not None and now >= self._next_battery:
-            self._next_battery = now + BATTERY_INTERVAL
-            try:
-                battery = self._device.battery_percent()
-            except (OSError, DeviceError, p.ProtocolError) as e:
-                log.debug('battery read failed: %s', e)
-                self._next_battery = now + POLL_BACKOFF
-            else:
-                if battery != self.status.battery:
-                    self.status.battery = battery
-                    self._notify()
+        if self._status_stale and self._device is not None:
+            self._status_stale = False  # one attempt; a sleeping mouse just keeps old values
+            self._read_dpi()
+            if self.status.battery is None:
+                try:
+                    self.status.battery = self._device.battery_percent()
+                except (OSError, DeviceError, p.ProtocolError) as e:
+                    log.debug('battery read failed: %s', e)
+            self._notify()
         if changed_by_user and self.on_dpi_changed:
             self.on_dpi_changed(self.status)
 

@@ -338,27 +338,26 @@ def test_dpi_button_event_updates_status_and_notifies(env):
     assert service.status.dpi == 3200
 
 
-def test_polling_finds_dpi_change_without_events(env):
+def test_no_polling_without_events(env):
     service, clock, device, *_ = env
     seen = []
     service.on_dpi_changed = lambda status: seen.append(status.dpi)
     service.tick()
     device.dpi_active = 1
-    service.tick()
-    assert seen == []  # not due yet
-    clock.now += svc.POLL_INTERVAL
-    service.tick()
-    assert seen == [400]
+    for _ in range(50):
+        clock.now += 1
+        service.tick()
+    assert seen == [] and service.status.dpi == 1600  # nothing asked the device
 
 
 def test_sleeping_mouse_keeps_device_open(env):
     service, clock, device, *_ = env
     service.tick()
     device.fail = True
-    clock.now += svc.POLL_INTERVAL
+    service.on_device_event(DpiChanged(3200, 3200))
     service.tick()
     assert not device.closed
-    assert service.status.dpi == 1600  # last known value stays
+    assert service.status.dpi == 3200  # from the event; the stage read failed
 
 
 def test_battery_event(env):

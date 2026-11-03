@@ -83,7 +83,6 @@ def main(argv: list[str] | None = None) -> int:
     events = event_reader(service.on_device_event)
     if events is not None:
         events.start()
-    service.set_poll_dpi(events is None)
     watcher = foreground_watcher(service.on_window)
     watcher.start()
     try:
