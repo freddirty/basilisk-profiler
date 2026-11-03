@@ -227,3 +227,10 @@ def test_dock_effect_commands():
     effect = p.parse_dock_effect(answer)
     assert effect.effect == p.EFFECT_STATIC and effect.params[3:6] == bytes([0x70, 0xFF, 0x00])
     assert p.DockEffect.from_json(effect.to_json()) == effect
+
+
+def test_battery_color():
+    assert p.battery_color(0) == (0xFF, 0, 0)
+    assert p.battery_color(50) == (0xFF, 0xFF, 0)
+    assert p.battery_color(100) == (0, 0xFF, 0)
+    assert p.battery_color(80) == (0x66, 0xFF, 0)  # the dock showed 70 ff 00 at ~80%

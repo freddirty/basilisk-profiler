@@ -314,6 +314,10 @@ class Service:
                 return
             if self._dock_wanted:
                 device.set_dock_effect(p.BATTERY_EFFECT)
+                if self.status.battery is not None:
+                    # the dock repaints at the next battery report; show an estimate until then
+                    color = p.static_effect(*p.battery_color(self.status.battery))
+                    device.set_dock_effect(color, p.DOCK_STORE_NOW)
             else:
                 effect = self._dock_previous() or p.static_effect(0xFF, 0xFF, 0xFF)
                 device.set_dock_effect(effect)

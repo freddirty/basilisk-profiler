@@ -238,6 +238,14 @@ def static_effect(r: int, g: int, b: int) -> DockEffect:
     return DockEffect(EFFECT_STATIC, bytes([0x00, 0x00, 0x01, r, g, b]))
 
 
+def battery_color(percent: int) -> tuple[int, int, int]:
+    """Our estimate of the battery effect's colour: hue 0 (red) .. 120 (green) degrees."""
+    hue = 120 * min(max(percent, 0), 100) / 100
+    if hue < 60:
+        return 0xFF, round(hue / 60 * 0xFF), 0
+    return round((120 - hue) / 60 * 0xFF), 0xFF, 0
+
+
 def get_dock_effect(store: int = DOCK_STORE) -> Report:
     return Report(0x0F, 0x82, _args(store, DOCK_LED, size=12),
                   transaction_id=DOCK_TRANSACTION_ID)

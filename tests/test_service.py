@@ -397,6 +397,7 @@ def test_dock_battery_off_restores_previous_effect(env):
     service.set_dock_battery(True)
     service.tick()
     assert device.dock == p.BATTERY_EFFECT and service.dock_battery is True
+    assert device.dock_now == p.static_effect(*p.battery_color(80))  # shown right away
     service.set_dock_battery(False)
     service.tick()
     assert device.dock == blue and device.dock_now == blue
