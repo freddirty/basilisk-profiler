@@ -5,6 +5,9 @@ import pytest
 
 from basilisk_profiler.platform.linux.conflicts import warnings
 
+# sysfs names contain ':', which Windows does not allow in file names
+linux_only = pytest.mark.skipif(sys.platform == 'win32', reason='sysfs-style paths')
+
 
 def test_no_conflicts_on_clean_system(tmp_path):
     (tmp_path / 'sys').mkdir()
@@ -13,6 +16,7 @@ def test_no_conflicts_on_clean_system(tmp_path):
     assert warnings(tmp_path / 'sys', tmp_path / 'proc') == []
 
 
+@linux_only
 def test_openrazer_driver_bound_to_dock(tmp_path):
     driver = tmp_path / 'sys' / 'bus' / 'hid' / 'drivers' / 'razermouse'
     (driver / '0003:1532:00A4.0007').mkdir(parents=True)
@@ -22,6 +26,7 @@ def test_openrazer_driver_bound_to_dock(tmp_path):
     assert len(found) == 1 and 'razermouse' in found[0]
 
 
+@linux_only
 def test_openrazer_driver_for_other_device_is_ignored(tmp_path):
     driver = tmp_path / 'sys' / 'bus' / 'hid' / 'drivers' / 'razermouse'
     (driver / '0003:1532:0084.0001').mkdir(parents=True)
