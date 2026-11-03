@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Basilisk Profiler
+Comment=Button mappings and per-window profiles for the Razer Basilisk V3 Pro
+Exec=basilisk-profiler
+Icon=basilisk-profiler
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=razer;mouse;basilisk;profile;

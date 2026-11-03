@@ -18,6 +18,11 @@ Nyílt forráskódú profilkezelő a **Razer Basilisk V3 Pro** egérhez (Mouse D
 | [`tools/razer_cmds.py`](tools/razer_cmds.py) | `tshark` mezőkimenetből listázza a 90 bájtos Razer feature reportokat |
 | [`tools/ldb.py`](tools/ldb.py) | a Synapse 4 IndexedDB (LevelDB `.ldb`, Snappy) táblájának kicsomagolója, tiszta Pythonban |
 
+## Telepítés
+
+- **Windows:** a [Releases](https://github.com/freddirty/basilisk-profiler/releases) oldalról a `BasiliskProfiler-<verzió>-setup.exe`.
+- **Linux Mint 22 / Ubuntu 24.04 (X11):** a `basilisk-profiler_<verzió>_amd64.deb`, telepítés: `sudo apt install ./basilisk-profiler_<verzió>_amd64.deb`. A csomag a udev-szabályt is felteszi, így az egér azonnal, root nélkül elérhető. Indítás a menüből („Basilisk Profiler”); a tálcamenüben bekapcsolható az „Indítás bejelentkezéskor”. Parancssor: `basilisk-profiler cli info`.
+
 ## Használat (fejlesztői állapot)
 
 A Synapse-ból előbb ki kell lépni, mert ő is írja az egeret. Linuxon a `/dev/hidraw*` eléréséhez telepíteni kell a udev-szabályt (`sudo cp packaging/linux/70-basilisk-profiler.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger`), és az OpenRazer ne kezelje az egeret.

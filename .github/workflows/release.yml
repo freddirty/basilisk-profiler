@@ -1,6 +1,6 @@
 name: Release
 
-# v* tag: build the Windows installer and publish a GitHub Release with it.
+# v* tag: build the Windows installer and the Linux .deb and publish a GitHub Release with them.
 # Pull requests touching packaging: build only and keep the installer as a workflow artifact.
 on:
   push:
@@ -55,9 +55,45 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/BasiliskProfiler-*-setup.exe --title "$GITHUB_REF_NAME" --generate-notes
 
-  # Linux .deb (ubuntu-22.04 / Mint 21) comes after the Windows version is complete.
+  # Linux .deb for Mint 22 / Ubuntu 24.04 (PyInstaller one-folder build with Qt bundled).
   linux-deb:
-    if: false
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
-      - run: echo "not implemented yet"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(python -c "import re;print(re.search(r'__version__ = .(.+?).$', open('src/basilisk_profiler/__init__.py').read(), re.M).group(1))")" >> "$GITHUB_OUTPUT"
+          fi
+      - run: sudo apt-get update && sudo apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libegl1 xvfb
+      - run: pip install .[gui] pyinstaller
+      - run: packaging/linux/build-deb.sh ${{ steps.version.outputs.version }}
+      - name: Smoke test the package
+        run: |
+          deb=$(ls dist/basilisk-profiler_*_amd64.deb)
+          dpkg-deb --info "$deb"
+          sudo apt-get install -y "./$deb"
+          test -f /usr/lib/udev/rules.d/70-basilisk-profiler.rules
+          basilisk-profiler cli list || true
+          xvfb-run -a timeout 8 basilisk-profiler --no-tray --config "$RUNNER_TEMP/c/config.toml" || [ $? -eq 124 ]
+          cat "$RUNNER_TEMP/c/basilisk-profiler.log" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: dist/basilisk-profiler_*_amd64.deb
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 30); do
+            gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break
+            sleep 20
+          done
+          gh release upload "$GITHUB_REF_NAME" dist/basilisk-profiler_*_amd64.deb --clobber
