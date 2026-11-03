@@ -53,7 +53,8 @@ def test_bad_files(tmp_path, data):
 
 def test_resolve(tmp_path):
     assert cur.resolve('a.cur', tmp_path) == tmp_path / 'cursors' / 'a.cur'
-    assert cur.resolve('/x/a.cur', tmp_path).as_posix() == '/x/a.cur'
+    absolute = tmp_path / 'elsewhere' / 'a.cur'
+    assert cur.resolve(str(absolute), tmp_path) == absolute
 
 
 CONFIG = cfg.EXAMPLE + '''
