@@ -146,6 +146,23 @@ class ConfigDraft:
             prof.pop('dpi_active', None)
         self.dirty = True
 
+    def cursor(self, profile: str) -> tuple[str | None, float]:
+        prof = self.profile(profile)
+        return prof.get('cursor'), float(prof.get('cursor_scale', 1.0))
+
+    def set_cursor(self, profile: str, path: str | None, scale: float = 1.0) -> None:
+        prof = self.profile(profile)
+        if path:
+            prof['cursor'] = path
+            if scale != 1.0:
+                prof['cursor_scale'] = scale
+            else:
+                prof.pop('cursor_scale', None)
+        else:
+            prof.pop('cursor', None)
+            prof.pop('cursor_scale', None)
+        self.dirty = True
+
     def onboard_slot(self, profile: str) -> int | None:
         return self.profile(profile).get('onboard_slot')
 

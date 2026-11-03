@@ -145,6 +145,10 @@ class Profile:
     dpi_active: int | None = None  # 1-based
     buttons: dict[int, p.Action] = field(default_factory=dict)
     onboard_slot: int | None = None  # 1..4 as in Synapse's On-Board Memory list
+    # pointer image shown while this profile's window is active (.cur file); not sent to
+    # the mouse, so it is not part of reports() or the onboard digest
+    cursor: str | None = None
+    cursor_scale: float = 1.0
 
     def dpi(self, store: int = p.STORE_LIVE) -> p.DpiStages | None:
         if not self.dpi_stages:

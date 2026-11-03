@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ..core import config as cfg
 from ..gui.errors import install_excepthook, setup_logging
-from ..platform import conflicts, event_reader, foreground_watcher
+from ..platform import conflicts, cursor_overlay, event_reader, foreground_watcher
 from .service import Service
 
 log = logging.getLogger('basilisk_profiler')
@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg.ensure_exists(args.config)
     for warning in conflicts():
         log.warning(warning)
-    service = Service(args.config)
+    service = Service(args.config, cursor_overlay=cursor_overlay())
     events = event_reader(service.on_device_event)
     if events is not None:
         events.start()

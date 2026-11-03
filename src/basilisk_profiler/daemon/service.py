@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..core import config as cfg
+from ..core import cursor as cur
 from ..core import protocol as p
 from ..core.device import DeviceError, RazerDevice
 from ..core.events import BatteryLevel, DeviceEvent, DpiChanged
@@ -44,7 +45,8 @@ class Service:
                  open_device: Callable[[], RazerDevice] = RazerDevice.open,
                  clock: Callable[[], float] = time.monotonic,
                  on_change: Callable[[Service], None] | None = None,
-                 dock_battery: bool | None = None):
+                 dock_battery: bool | None = None,
+                 cursor_overlay=None):
         self.config_path = config_path
         self._open_device = open_device
         self._clock = clock
@@ -76,6 +78,11 @@ class Service:
         self._dock_wanted = dock_battery
         self._dock_checked = False
         self.dock_state_path = config_path.with_name('dock-state.json')
+        # custom pointer: shown while the active window's profile names a cursor file
+        self._overlay = cursor_overlay
+        self._cursor_key: tuple | None = None  # (path, scale, mtime) currently shown
+        self._cursor_cache: dict[tuple, cur.CursorImage | None] = {}
+        self.cursor_error: str | None = None
         self.reload_config(force=True)
 
     # --- inputs ----------------------------------------------------------------
@@ -94,6 +101,7 @@ class Service:
 
     def set_paused(self, paused: bool) -> None:
         self.paused = paused
+        self._sync_cursor()
         if not paused:
             self._schedule(self._wanted(), now=True)
         self._notify()
@@ -108,6 +116,7 @@ class Service:
             except queue.Empty:
                 break
             self._schedule(self._wanted())
+        self._sync_cursor()  # right away: the pointer does not need the mouse to answer
         # onboard slots first: a window profile kept onboard is applied by selecting its slot
         if self._onboard_pending and not self.paused and self._sync_onboard():
             self._onboard_pending = False
@@ -120,6 +129,9 @@ class Service:
 
     def shutdown(self) -> None:
         """Give the mouse back as found: the slot that was active at start, normal mode."""
+        if self._overlay is not None:
+            self._overlay.hide()
+            self._cursor_key = None
         if self._device is None:
             return
         try:
@@ -156,9 +168,46 @@ class Service:
             return False
         self.active = None  # a reloaded profile may have new contents: write it again
         self._schedule(self._wanted(), now=True)
+        self._sync_cursor()
         self._onboard_pending = True
         self._notify()
         return True
+
+    def _sync_cursor(self) -> None:
+        """Show the wanted profile's cursor, or the normal pointer; no-op when unchanged."""
+        if self._overlay is None:
+            return
+        profile = None if self.paused else self._wanted()
+        key = None
+        if profile is not None and profile.cursor:
+            path = cur.resolve(profile.cursor, self.config_path.parent)
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                mtime = None
+            key = (str(path), profile.cursor_scale, mtime)
+        if key == self._cursor_key:
+            return
+        self._cursor_key = key
+        image = self._cursor_image(key) if key else None
+        if image is None:
+            self._overlay.hide()
+        else:
+            self._overlay.show(image)
+        self._notify()
+
+    def _cursor_image(self, key: tuple) -> cur.CursorImage | None:
+        if key not in self._cursor_cache:
+            path, scale, _ = key
+            try:
+                image = cur.load(Path(path)).scaled(scale)
+                self.cursor_error = None
+            except cur.CursorError as e:
+                log.warning('custom cursor not shown: %s', e)
+                self.cursor_error = str(e)
+                image = None
+            self._cursor_cache = {key: image}  # keep only the latest
+        return self._cursor_cache[key]
 
     def _wanted(self) -> Profile | None:
         return self.config.profile_for(self.window) if self.config else None
