@@ -63,6 +63,18 @@ class FakeDevice:
             raise DeviceError('gone')
         return 80
 
+    dock = p.BATTERY_EFFECT
+    dock_now = None
+
+    def dock_effect(self, store=p.DOCK_STORE):
+        return self.dock
+
+    def set_dock_effect(self, effect, store=p.DOCK_STORE):
+        if store == p.DOCK_STORE:
+            self.dock = effect
+        else:
+            self.dock_now = effect
+
     def close(self):
         self.closed = True
 
@@ -366,3 +378,48 @@ def test_battery_event(env):
     service.on_device_event(BatteryLevel(55))
     service.tick()
     assert service.status.battery == 55
+
+
+def test_dock_state_read_once_and_not_written(env):
+    service, clock, device, *_ = env
+    service.tick()
+    service.tick()
+    assert service.dock_battery is True
+    assert device.dock == p.BATTERY_EFFECT
+
+
+def test_dock_battery_off_restores_previous_effect(env):
+    service, clock, device, *_ = env
+    blue = p.static_effect(0, 0, 0xFF)
+    device.dock = blue
+    service.tick()
+    assert service.dock_battery is False
+    service.set_dock_battery(True)
+    service.tick()
+    assert device.dock == p.BATTERY_EFFECT and service.dock_battery is True
+    assert device.dock_now == p.static_effect(*p.battery_color(80))  # shown right away
+    service.set_dock_battery(False)
+    service.tick()
+    assert device.dock == blue and device.dock_now == blue
+    assert service.dock_battery is False
+
+
+def test_dock_battery_off_without_previous_is_white(env):
+    service, clock, device, *_ = env
+    service.tick()
+    service.set_dock_battery(False)
+    service.tick()
+    assert device.dock == p.static_effect(0xFF, 0xFF, 0xFF)
+
+
+def test_dock_choice_reapplied_after_reconnect(env):
+    service, clock, device, *_ = env
+    service.set_dock_battery(True)
+    service.tick()
+    device.dock = p.static_effect(1, 2, 3)  # e.g. changed by another program
+    service._device = None  # unplugged
+    service.tick()
+    clock.now += svc.REOPEN_INTERVAL
+    service.reload_config(force=True)  # anything that reopens the device
+    service.tick()
+    assert device.dock == p.BATTERY_EFFECT

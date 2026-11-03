@@ -202,6 +202,64 @@ def parse_charging(response: Report) -> bool:
     return bool(response.args[1])
 
 
+# --- Mouse Dock Pro lighting (0F/02, 0F/82) ----------------------------------------
+# The dock answers commands sent with transaction id 0xFF itself; with 0x1F they reach the
+# mouse (its LED zones 0x01 / 0x04 / 0x0A). The dock has a single LED zone, 0x0F.
+# Store 0x01 holds the persistent effect; store 0x00 holds the colour shown right now,
+# which the battery effect overwrites at the next battery report (e.g. when the mouse wakes).
+DOCK_TRANSACTION_ID = 0xFF
+DOCK_LED = 0x0F
+DOCK_STORE = 0x01
+DOCK_STORE_NOW = 0x00
+EFFECT_STATIC = 0x01
+EFFECT_BATTERY = 0x0D  # Synapse's battery level effect: red -> yellow -> green
+
+
+@dataclass(frozen=True)
+class DockEffect:
+    effect: int
+    params: bytes = b''  # the bytes after the effect id, as the dock reports them
+
+    def to_json(self) -> str:
+        return bytes([self.effect, *self.params]).hex()
+
+    @classmethod
+    def from_json(cls, text: str) -> DockEffect:
+        data = bytes.fromhex(text)
+        if not data:
+            raise ProtocolError('empty dock effect')
+        return cls(data[0], data[1:])
+
+
+BATTERY_EFFECT = DockEffect(EFFECT_BATTERY, b'\x01')
+
+
+def static_effect(r: int, g: int, b: int) -> DockEffect:
+    return DockEffect(EFFECT_STATIC, bytes([0x00, 0x00, 0x01, r, g, b]))
+
+
+def battery_color(percent: int) -> tuple[int, int, int]:
+    """Our estimate of the battery effect's colour: hue 0 (red) .. 120 (green) degrees."""
+    hue = 120 * min(max(percent, 0), 100) / 100
+    if hue < 60:
+        return 0xFF, round(hue / 60 * 0xFF), 0
+    return round((120 - hue) / 60 * 0xFF), 0xFF, 0
+
+
+def get_dock_effect(store: int = DOCK_STORE) -> Report:
+    return Report(0x0F, 0x82, _args(store, DOCK_LED, size=12),
+                  transaction_id=DOCK_TRANSACTION_ID)
+
+
+def parse_dock_effect(response: Report) -> DockEffect:
+    return DockEffect(response.args[2], bytes(response.args[3:response.size]))
+
+
+def set_dock_effect(effect: DockEffect, store: int = DOCK_STORE) -> Report:
+    return Report(0x0F, 0x02, bytes([store, DOCK_LED, effect.effect, *effect.params]),
+                  transaction_id=DOCK_TRANSACTION_ID)
+
+
 # --- DPI stages (04/06, 04/86) --------------------------------------------------
 
 @dataclass(frozen=True)

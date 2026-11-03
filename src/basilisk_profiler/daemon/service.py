@@ -43,7 +43,8 @@ class Service:
     def __init__(self, config_path: Path, *,
                  open_device: Callable[[], RazerDevice] = RazerDevice.open,
                  clock: Callable[[], float] = time.monotonic,
-                 on_change: Callable[[Service], None] | None = None):
+                 on_change: Callable[[Service], None] | None = None,
+                 dock_battery: bool | None = None):
         self.config_path = config_path
         self._open_device = open_device
         self._clock = clock
@@ -69,6 +70,12 @@ class Service:
         self._onboard_written: dict[str, str] = self._load_state()
         self._onboard_pending = False
         self._initial_store: int | None = None  # slot active when the device was first opened
+        # Dock LED: is the battery level effect on? None until read from the dock (once per
+        # open). ``_dock_wanted`` is the user's choice, applied when the dock differs from it.
+        self.dock_battery: bool | None = None
+        self._dock_wanted = dock_battery
+        self._dock_checked = False
+        self.dock_state_path = config_path.with_name('dock-state.json')
         self.reload_config(force=True)
 
     # --- inputs ----------------------------------------------------------------
@@ -80,6 +87,10 @@ class Service:
     def on_device_event(self, event: DeviceEvent) -> None:
         """Thread-safe; called by the platform's event reader."""
         self._device_events.put(event)
+
+    def set_dock_battery(self, on: bool) -> None:
+        """Turn the dock's battery level lighting on or off (applied at the next tick)."""
+        self._dock_wanted = on
 
     def set_paused(self, paused: bool) -> None:
         self.paused = paused
@@ -105,6 +116,7 @@ class Service:
             if self._clock() >= due and self._apply(profile):
                 self._pending = None
         self._update_status()
+        self._sync_dock()
 
     def shutdown(self) -> None:
         """Give the mouse back as found: the slot that was active at start, normal mode."""
@@ -279,6 +291,56 @@ class Service:
             self._notify()
         if changed_by_user and self.on_dpi_changed:
             self.on_dpi_changed(self.status)
+
+    def _sync_dock(self) -> None:
+        """Read the dock's lighting once per open; write it only when the user's choice differs.
+
+        Turning the battery effect off restores the effect found before it was turned on
+        (kept in dock-state.json), or static white when none is known.
+        """
+        device = self._device
+        if device is None:
+            self._dock_checked = False  # read again after a reconnect
+            return
+        try:
+            if not self._dock_checked:
+                self._dock_checked = True
+                current = device.dock_effect()
+                self.dock_battery = current.effect == p.EFFECT_BATTERY
+                if not self.dock_battery:
+                    self._save_dock_previous(current)
+                self._notify()
+            if self._dock_wanted is None or self._dock_wanted == self.dock_battery:
+                return
+            if self._dock_wanted:
+                device.set_dock_effect(p.BATTERY_EFFECT)
+                if self.status.battery is not None:
+                    # the dock repaints at the next battery report; show an estimate until then
+                    color = p.static_effect(*p.battery_color(self.status.battery))
+                    device.set_dock_effect(color, p.DOCK_STORE_NOW)
+            else:
+                effect = self._dock_previous() or p.static_effect(0xFF, 0xFF, 0xFF)
+                device.set_dock_effect(effect)
+                if effect.effect == p.EFFECT_STATIC:
+                    device.set_dock_effect(effect, p.DOCK_STORE_NOW)  # show it right away
+            self.dock_battery = self._dock_wanted
+            log.info('dock battery lighting %s', 'on' if self.dock_battery else 'off')
+        except (OSError, DeviceError, p.ProtocolError) as e:
+            log.warning('dock lighting failed: %s', e)
+            self._dock_wanted = self.dock_battery  # no retry on every tick
+        self._notify()
+
+    def _dock_previous(self) -> p.DockEffect | None:
+        try:
+            return p.DockEffect.from_json(json.loads(self.dock_state_path.read_text())['previous'])
+        except (OSError, ValueError, KeyError, TypeError, p.ProtocolError):
+            return None
+
+    def _save_dock_previous(self, effect: p.DockEffect) -> None:
+        try:
+            self.dock_state_path.write_text(json.dumps({'previous': effect.to_json()}, indent=2))
+        except OSError as e:
+            log.warning('could not save %s: %s', self.dock_state_path, e)
 
     def _read_dpi(self) -> bool:
         """Read the active slot's stage table; errors leave the device open (mouse asleep)."""
