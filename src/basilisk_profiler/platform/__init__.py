@@ -36,6 +36,9 @@ def list_windows():
     if sys.platform == 'win32':
         from .win.foreground import list_windows as win_list
         return win_list()
+    if sys.platform.startswith('linux'):
+        from .linux.x11 import list_windows as x11_list
+        return x11_list()
     return []
 
 
@@ -44,6 +47,9 @@ def autostart():
     if sys.platform == 'win32':
         from .win import autostart as win_autostart
         return win_autostart
+    if sys.platform.startswith('linux'):
+        from .linux import autostart as linux_autostart
+        return linux_autostart
     return None
 
 

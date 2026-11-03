@@ -53,7 +53,8 @@ class Tray:
         quit_action.triggered.connect(app.quit)
         actions = [self.status, self.pause, settings, open_config]
         if (auto := autostart()) is not None:
-            start_with_os = QAction('Indítás a Windows-szal', menu, checkable=True)
+            start_with_os = QAction('Indítás a Windows-szal' if sys.platform == 'win32'
+                                    else 'Indítás bejelentkezéskor', menu, checkable=True)
             start_with_os.setChecked(auto.is_enabled())
             start_with_os.toggled.connect(auto.set_enabled)
             actions.append(start_with_os)

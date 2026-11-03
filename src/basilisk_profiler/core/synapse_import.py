@@ -43,11 +43,14 @@ class ImportedProfile:
     skipped: list[str] = field(default_factory=list)
 
 
+DB_DIR_NAME = 'https_apps.razer.com_0.indexeddb.leveldb'
+
+
 def default_db_dir() -> Path | None:
     if sys.platform != 'win32':
         return None
     return (Path(os.environ.get('LOCALAPPDATA', '')) / 'Razer' / 'RazerAppEngine' / 'User Data'
-            / 'Default' / 'IndexedDB' / 'https_apps.razer.com_0.indexeddb.leveldb')
+            / 'Default' / 'IndexedDB' / DB_DIR_NAME)
 
 
 def _blobs(db_dir: Path) -> list[bytes]:
@@ -128,8 +131,22 @@ def convert(payload: dict) -> ImportedProfile:
     return ImportedProfile(payload['guid'], profile, skipped)
 
 
+def find_db_dir(folder: Path) -> Path | None:
+    """The Synapse IndexedDB folder at or below ``folder`` (e.g. a copied "User Data")."""
+    if not folder.is_dir():
+        return None
+    if folder.name == DB_DIR_NAME:
+        return folder
+    below = next((p for p in sorted(folder.rglob(DB_DIR_NAME)) if p.is_dir()), None)
+    if below is not None:
+        return below
+    if any(folder.glob('*.ldb')) or any(folder.glob('*.log')):
+        return folder
+    return None
+
+
 def read_profiles(db_dir: Path | None = None) -> list[ImportedProfile]:
-    db_dir = db_dir or default_db_dir()
+    db_dir = find_db_dir(db_dir) if db_dir else default_db_dir()
     if db_dir is None or not db_dir.is_dir():
         raise FileNotFoundError(f'Synapse database not found: {db_dir}')
     found: dict[str, ImportedProfile] = {}
