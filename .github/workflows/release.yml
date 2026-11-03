@@ -1,6 +1,6 @@
 name: Release
 
-# v* tag: build the Windows installer and the Linux .deb and publish a GitHub Release with them.
+# v* tag: build the Linux .deb and publish a GitHub Release with it (Windows: see the windows job).
 # Pull requests touching packaging: build only and keep the installer as a workflow artifact.
 on:
   push:
@@ -15,7 +15,10 @@ permissions:
   contents: write
 
 jobs:
+  # The Windows installer is built on pull requests but not released on tags until the
+  # live-status changes (0.2.0) have been tested on Windows hardware.
   windows:
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,8 +95,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for i in $(seq 1 30); do
-            gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break
-            sleep 20
-          done
-          gh release upload "$GITHUB_REF_NAME" dist/basilisk-profiler_*_amd64.deb --clobber
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/basilisk-profiler_*_amd64.deb --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/basilisk-profiler_*_amd64.deb \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          fi
