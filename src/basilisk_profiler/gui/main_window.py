@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -686,8 +687,18 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
 
     def import_synapse(self):
+        folder = None
+        default = synapse_import.default_db_dir()
+        if default is None or not default.is_dir():
+            # no local Synapse (Linux): a copy of its data folder from a Windows machine
+            chosen = QFileDialog.getExistingDirectory(
+                self, 'A Synapse adatmappája (Windowsról átmásolva: '
+                      '%LOCALAPPDATA%\\Razer\\RazerAppEngine\\User Data)')
+            if not chosen:
+                return
+            folder = Path(chosen)
         try:
-            imported = synapse_import.read_profiles()
+            imported = synapse_import.read_profiles(folder)
         except (OSError, ValueError) as e:
             QMessageBox.warning(self, 'Importálás', f'A Synapse adatai nem olvashatók:\n{e}')
             return

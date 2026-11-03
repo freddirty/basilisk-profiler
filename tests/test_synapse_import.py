@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import json
 
+import pytest
+
 from basilisk_profiler.core import keys
 from basilisk_profiler.core import protocol as p
 from basilisk_profiler.core import synapse_import as si
@@ -69,3 +71,19 @@ def test_ignores_macros_and_garbage(tmp_path):
     macro = json.dumps({'payload': json.dumps({'name': 'Macro 1', 'guid': 'm'})}).encode()
     db = write_db(tmp_path, b'{"payload":"broken', macro)
     assert si.read_profiles(db) == []
+
+
+def test_finds_database_in_copied_user_data_folder(tmp_path):
+    db = tmp_path / 'User Data' / 'Default' / 'IndexedDB' / si.DB_DIR_NAME
+    db.mkdir(parents=True)
+    (db / '000001.log').write_bytes(payload('Copied', 'g9', [
+        kb('MouseInput', 'Button5', 'KEY_T', ['KEY_LEFT_CTRL'])]))
+    assert si.find_db_dir(tmp_path / 'User Data') == db
+    (imported,) = si.read_profiles(tmp_path / 'User Data')
+    assert imported.profile.name == 'Copied'
+
+
+def test_folder_without_database_is_not_found(tmp_path):
+    assert si.find_db_dir(tmp_path) is None
+    with pytest.raises(FileNotFoundError):
+        si.read_profiles(tmp_path)
