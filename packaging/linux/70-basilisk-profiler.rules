@@ -1,0 +1,2 @@
+# Razer Mouse Dock Pro / Basilisk V3 Pro: read-write access for the logged-in user (basilisk-profiler).
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="00a4|00aa|00ab", TAG+="uaccess"

@@ -13,6 +13,7 @@ from pathlib import Path
 from .core import protocol as p
 from .core.device import DeviceError, RazerDevice, find_devices
 from .core.model import BUTTON_IDS, format_action, parse_action, parse_any_action
+from .platform import conflicts
 
 
 def format_stages(stages: p.DpiStages) -> str:
@@ -163,6 +164,8 @@ COMMANDS = {
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    for warning in conflicts():
+        print(f'warning: {warning}', file=sys.stderr)
     try:
         if args.command == 'list':
             cmd_list(args)
