@@ -6,6 +6,7 @@ import pytest
 from basilisk_profiler.core import config as cfg
 from basilisk_profiler.core import protocol as p
 from basilisk_profiler.core.device import DeviceError
+from basilisk_profiler.core.events import BatteryLevel, DpiChanged
 from basilisk_profiler.core.model import WindowInfo
 from basilisk_profiler.daemon import service as svc
 
@@ -47,6 +48,20 @@ class FakeDevice:
     def set_active_profile(self, store):
         self.active_store = store
         self.selected.append(store)
+
+    stage_table = (400, 800, 1600, 3200, 6400)
+    dpi_active = 3
+
+    def dpi_stages(self, store=p.STORE_LIVE):
+        if self.fail:
+            raise DeviceError('gone')
+        return p.DpiStages(tuple(p.DpiStage(v, v) for v in self.stage_table),
+                           active=self.dpi_active, store=store)
+
+    def battery_percent(self):
+        if self.fail:
+            raise DeviceError('gone')
+        return 80
 
     def close(self):
         self.closed = True
@@ -300,3 +315,54 @@ def test_shutdown_restores_initial_slot(env):
     assert device.active_store == p.STORE_LIVE
     service.shutdown()
     assert device.active_store == 0x03
+
+
+def test_live_status_read_after_profile_applied(env):
+    service, clock, device, *_ = env
+    service.tick()
+    assert service.status.dpi == 1600
+    assert (service.status.stage, service.status.stage_count) == (3, 5)
+    assert service.status.battery == 80
+
+
+def test_dpi_button_event_updates_status_and_notifies(env):
+    service, clock, device, *_ = env
+    seen = []
+    service.on_dpi_changed = lambda status: seen.append((status.dpi, status.stage))
+    service.tick()
+    assert seen == []  # reading the status at start is not a user change
+    device.dpi_active = 4
+    service.on_device_event(DpiChanged(3200, 3200))
+    service.tick()
+    assert seen == [(3200, 4)]
+    assert service.status.dpi == 3200
+
+
+def test_no_polling_without_events(env):
+    service, clock, device, *_ = env
+    seen = []
+    service.on_dpi_changed = lambda status: seen.append(status.dpi)
+    service.tick()
+    device.dpi_active = 1
+    for _ in range(50):
+        clock.now += 1
+        service.tick()
+    assert seen == [] and service.status.dpi == 1600  # nothing asked the device
+
+
+def test_sleeping_mouse_keeps_device_open(env):
+    service, clock, device, *_ = env
+    service.tick()
+    device.fail = True
+    service.on_device_event(DpiChanged(3200, 3200))
+    service.tick()
+    assert not device.closed
+    assert service.status.dpi == 3200  # from the event; the stage read failed
+
+
+def test_battery_event(env):
+    service, clock, device, *_ = env
+    service.tick()
+    service.on_device_event(BatteryLevel(55))
+    service.tick()
+    assert service.status.battery == 55

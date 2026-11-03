@@ -47,3 +47,19 @@ def test_main_window_edits_and_saves(app, tmp_path):
     assert cfg.load(path).profiles['browser'].buttons[0x05].modifiers == 0x03
     window.draft.dirty = False
     window.close()
+
+
+def test_tray_profile_letter_and_status_lines(tmp_path):
+    from basilisk_profiler.daemon.service import LiveStatus
+    from basilisk_profiler.daemon.tray import profile_letter, status_lines
+
+    assert profile_letter('browser') == 'B'
+    assert profile_letter('  2nd') == '2'
+    assert profile_letter(None) == ''
+
+    class S:
+        status = LiveStatus(dpi=1600, stage=3, stage_count=5, battery=80)
+
+    assert status_lines(S()) == ['DPI: 1600 (3/5. fokozat)', 'Akku: 80%']
+    S.status = LiveStatus()
+    assert status_lines(S()) == []

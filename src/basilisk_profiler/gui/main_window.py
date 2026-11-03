@@ -551,6 +551,11 @@ class MainWindow(QMainWindow):
         toolbar.addAction(save)
         toolbar.addAction(import_action)
         self.statusBar().showMessage(str(config_path))
+        # live DPI / battery from the tray service; stays hidden when run on its own
+        self.live = QLabel()
+        self.live.setStyleSheet('font-weight: bold; padding: 0 8px;')
+        self.live.hide()
+        self.statusBar().addPermanentWidget(self.live)
         self._refresh_profiles()
 
     # --- profiles ----------------------------------------------------------------
@@ -712,6 +717,10 @@ class MainWindow(QMainWindow):
                 last = self.draft.add_imported(item.profile)
             self._refresh_profiles(last)
             self._mark_dirty()
+
+    def set_live_status(self, text: str) -> None:
+        self.live.setText(text)
+        self.live.setVisible(bool(text))
 
     def closeEvent(self, event):
         if self.draft.dirty:

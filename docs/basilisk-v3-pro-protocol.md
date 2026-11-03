@@ -138,6 +138,19 @@ Nyers rögzítés: csak helyben (`captures/`). Dekódolva: `data/session2/`.
 - A profilgombos kézi váltás a következő ablakváltásig érvényes.
 - Kilépéskor visszaállítja azt a helyet, ami induláskor aktív volt, és normal mode-ot hagy.
 
+## Események a dock 1. interfészén (Linux, hidraw, 2026-11-03)
+
+Normal mode-ban, Synapse nélkül figyelve. A dock 1. interfésze (Linuxon `/dev/hidraw3`) report ID 5-tel jelez. A kernel minden hidraw-olvasónak saját másolatot ad, így a figyelés nem veszi el a bemenetet az asztaltól.
+
+| Report | Jelentés | Példa |
+| --- | --- | --- |
+| `05 02 XX XX YY YY` | DPI megváltozott (X/Y big-endian), minden DPI-gombnyomásra | `05 02 0c 80 0c 80` = 3200 |
+| `05 31 LL …` | akku szintje, 0–255 | `05 31 cd` ≈ 80% |
+| `05 09 SS 01` | kapcsolat / ébredés állapota | `05 09 02 01`, `05 09 03 01` |
+| `05 0c …` | ismeretlen, ébredéskor | |
+
+Kiegészítő lekérdezések: a `04/85` (arg.: hely) az aktuális DPI-t adja (`hely, X(2), Y(2)`), a `04/86` 1. bájtja az aktív fokozat sorszáma (1-től). Alvó egérnél a dock `FAILURE` vagy időtúllépés választ ad, amíg az egér meg nem mozdul.
+
 ## Következmények a tervezéshez
 
 1. Az alap protokoll (keret, CRC, DPI, fényerő, akku, eszközmód) megegyezik az openrazer-rel, így Linuxon a kód közvetlenül hidraw-on keresztül írható.

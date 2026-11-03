@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ..core import config as cfg
 from ..gui.errors import install_excepthook, setup_logging
-from ..platform import conflicts, foreground_watcher
+from ..platform import conflicts, event_reader, foreground_watcher
 from .service import Service
 
 log = logging.getLogger('basilisk_profiler')
@@ -80,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     for warning in conflicts():
         log.warning(warning)
     service = Service(args.config)
+    events = event_reader(service.on_device_event)
+    if events is not None:
+        events.start()
     watcher = foreground_watcher(service.on_window)
     watcher.start()
     try:
@@ -93,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
                 run_headless(service)
     finally:
         watcher.stop()
+        if events is not None:
+            events.stop()
         service.shutdown()
     return 0
 
