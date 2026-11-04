@@ -2,16 +2,17 @@
 """System tray front end for the service (PySide6)."""
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import QRect, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QCursor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QSystemTrayIcon
 
+from ..core.ui_settings import UiSettings, ui_settings_path
+from ..gui.language import apply_language
+from ..i18n import AUTO, LANGUAGES, N_, tr
 from ..platform import autostart
 from .service import Service
 
@@ -19,7 +20,8 @@ TICK_MS = 100
 
 
 COLORS = {'ok': '#44d62c', 'manual': '#f0a020', 'paused': '#9a9a9a', 'error': '#e04040'}
-SLOT_NAMES = {0x01: 'fehér', 0x02: 'piros', 0x03: 'zöld', 0x04: 'kék', 0x05: 'cián'}
+SLOT_NAMES = {0x01: N_('white'), 0x02: N_('red'), 0x03: N_('green'), 0x04: N_('blue'),
+              0x05: N_('cyan')}
 
 
 def profile_letter(name: str | None) -> str:
@@ -53,22 +55,26 @@ def profile_display(service: Service) -> tuple[str, str]:
     store = service.manual_store
     if store is None:
         name = service.active.name if service.active else None
-        return f'Profil: {name or "-"}', profile_letter(name)
-    slot = f'{SLOT_NAMES.get(store, f"0x{store:02x}")} hely'
+        return tr('Profile: {name}', name=name or '-'), profile_letter(name)
+    color = tr(SLOT_NAMES[store]) if store in SLOT_NAMES else f'0x{store:02x}'
+    slot = tr('{color} slot', color=color)
     profile = service.manual_profile
     if profile is None:
-        return f'Profil: kézi, {slot}', 'K'
-    return f'Profil: {profile.name} (kézi, {slot})', profile_letter(profile.name)
+        # the icon letter of a manual slot without a known profile: M(anual) / K(ézi)
+        return tr('Profile: manual, {slot}', slot=slot), tr('M')
+    return (tr('Profile: {name} (manual, {slot})', name=profile.name, slot=slot),
+            profile_letter(profile.name))
 
 
 def status_lines(service: Service) -> list[str]:
     st = service.status
     lines = []
     if st.dpi is not None:
-        stage = f' ({st.stage}/{st.stage_count}. fokozat)' if st.stage and st.stage_count else ''
+        stage = (tr(' (stage {stage}/{count})', stage=st.stage, count=st.stage_count)
+                 if st.stage and st.stage_count else '')
         lines.append(f'DPI: {st.dpi}{stage}')
     if st.battery is not None:
-        lines.append(f'Akku: {st.battery}%')
+        lines.append(tr('Battery: {percent}%', percent=st.battery))
     return lines
 
 
@@ -106,27 +112,6 @@ class Osd(QLabel):
         self._hide.start(msecs)
 
 
-class UiSettings:
-    """Small per-user tray preferences next to the config (not part of the profiles)."""
-
-    def __init__(self, path: Path):
-        self.path = path
-        try:
-            self.data = json.loads(path.read_text())
-        except (OSError, ValueError):
-            self.data = {}
-
-    def get(self, key: str, default):
-        return self.data.get(key, default)
-
-    def set(self, key: str, value) -> None:
-        self.data[key] = value
-        try:
-            self.path.write_text(json.dumps(self.data, indent=2))
-        except OSError:
-            pass
-
-
 def open_file(path) -> None:
     if sys.platform == 'win32':
         os.startfile(path)  # noqa: S606
@@ -138,37 +123,51 @@ class Tray:
     def __init__(self, app: QApplication, service: Service):
         self.app = app
         self.service = service
-        self.ui = UiSettings(service.config_path.with_name('tray.json'))
+        self.ui = UiSettings(ui_settings_path(service.config_path))
+        apply_language(app, self.ui.get('language', AUTO))
         self._icon_key = None
         self.tray = QSystemTrayIcon(_icon(COLORS['ok']))
         menu = QMenu()
         self.status = QAction('', menu, enabled=False)
-        self.pause = QAction('Szüneteltetés', menu, checkable=True)
+        self.pause = QAction(menu, checkable=True)
         self.pause.toggled.connect(service.set_paused)
-        settings = QAction('Beállítások…', menu)
-        settings.triggered.connect(self.open_settings)
-        open_config = QAction('Konfig szövegként', menu)
-        open_config.triggered.connect(lambda: open_file(service.config_path))
-        quit_action = QAction('Kilépés', menu)
-        quit_action.triggered.connect(app.quit)
-        self.dpi_popup = QAction('DPI-váltás jelzése', menu, checkable=True)
+        self.settings = QAction(menu)
+        self.settings.triggered.connect(self.open_settings)
+        self.open_config = QAction(menu)
+        self.open_config.triggered.connect(lambda: open_file(service.config_path))
+        self.quit_action = QAction(menu)
+        self.quit_action.triggered.connect(app.quit)
+        self.dpi_popup = QAction(menu, checkable=True)
         self.dpi_popup.setChecked(self.ui.get('dpi_popup', True))
         self.dpi_popup.toggled.connect(lambda on: self.ui.set('dpi_popup', on))
-        self.dock_battery = QAction('Dokk: akkuszint-effekt', menu, checkable=True)
+        self.dock_battery = QAction(menu, checkable=True)
         self.dock_battery.setEnabled(False)  # until the dock has been read
         self.dock_battery.toggled.connect(self._dock_battery_toggled)
         if (saved := self.ui.get('dock_battery', None)) is not None:
             service.set_dock_battery(saved)  # re-applied if something else changed the dock
-        actions = [self.status, self.pause, settings, open_config, self.dpi_popup,
+        self.language_menu = QMenu(menu)
+        self.language_group = QActionGroup(self.language_menu)
+        self.language_actions = {}
+        current = self.ui.get('language', AUTO)
+        for code in (AUTO, *LANGUAGES):
+            action = QAction(self.language_menu, checkable=True)
+            action.setChecked(code == current or (code == AUTO and current not in LANGUAGES))
+            action.triggered.connect(lambda _=False, c=code: self.set_language(c))
+            self.language_group.addAction(action)
+            self.language_menu.addAction(action)
+            self.language_actions[code] = action
+        actions = [self.status, self.pause, self.settings, self.open_config, self.dpi_popup,
                    self.dock_battery]
+        self.start_with_os = None
         if (auto := autostart()) is not None:
-            start_with_os = QAction('Indítás a Windows-szal' if sys.platform == 'win32'
-                                    else 'Indítás bejelentkezéskor', menu, checkable=True)
-            start_with_os.setChecked(auto.is_enabled())
-            start_with_os.toggled.connect(auto.set_enabled)
-            actions.append(start_with_os)
-        for action in (*actions, quit_action):
+            self.start_with_os = QAction(menu, checkable=True)
+            self.start_with_os.setChecked(auto.is_enabled())
+            self.start_with_os.toggled.connect(auto.set_enabled)
+            actions.append(self.start_with_os)
+        for action in actions:
             menu.addAction(action)
+        menu.addMenu(self.language_menu)
+        menu.addAction(self.quit_action)
         self.menu = menu  # keep a reference: the tray does not own it
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._activated)
@@ -179,8 +178,31 @@ class Tray:
         self.timer = QTimer()
         self.timer.timeout.connect(service.tick)
         self.timer.start(TICK_MS)
-        self.refresh()
+        self.retranslate()
         self.tray.show()
+
+    def retranslate(self) -> None:
+        """Menu texts in the current language (at start and after a language change)."""
+        self.pause.setText(tr('Pause'))
+        self.settings.setText(tr('Settings…'))
+        self.open_config.setText(tr('Config as text'))
+        self.quit_action.setText(tr('Quit'))
+        self.dpi_popup.setText(tr('Show DPI changes'))
+        self.dock_battery.setText(tr('Dock: battery level effect'))
+        if self.start_with_os is not None:
+            self.start_with_os.setText(tr('Start with Windows') if sys.platform == 'win32'
+                                       else tr('Start at login'))
+        # 'Nyelv / Language': findable even by someone who cannot read the current language
+        self.language_menu.setTitle(tr('Language'))
+        for code, action in self.language_actions.items():
+            action.setText(tr('Automatic (system)') if code == AUTO else LANGUAGES[code])
+        self.refresh()
+
+    def set_language(self, code: str) -> None:
+        """Takes effect in the tray at once; an open settings window on its next opening."""
+        self.ui.set('language', code)
+        apply_language(self.app, code)
+        self.retranslate()
 
     def _dpi_changed(self, status) -> None:
         self.refresh()
@@ -212,7 +234,7 @@ class Tray:
         s = self.service
         text, letter = profile_display(s)
         if s.config_error:
-            text += ' (konfighiba)'
+            text += tr(' (config error)')
             state = 'error'
         else:
             state = 'paused' if s.paused else 'manual' if s.manual_store else 'ok'

@@ -13,6 +13,7 @@ import tomli_w
 
 from ..core import config as cfg
 from ..core.model import Config, Profile, button_name, format_action
+from ..i18n import N_, tr
 
 RULE_FIELDS = ('match_process', 'match_class', 'match_title')
 
@@ -73,7 +74,7 @@ class ConfigDraft:
         return f'{base} ({n})'
 
     def add_profile(self, name: str, template: dict | None = None) -> str:
-        name = self.unique_name(name.strip() or 'profil')
+        name = self.unique_name(name.strip() or tr('profile'))
         prof = copy.deepcopy(template) if template else {}
         prof['name'] = name
         self.profiles.append(prof)
@@ -87,14 +88,14 @@ class ConfigDraft:
         return self.add_profile(profile.name, entry)
 
     def duplicate(self, name: str) -> str:
-        return self.add_profile(f'{name} másolat', self.profile(name))
+        return self.add_profile(tr('{name} copy', name=name), self.profile(name))
 
     def rename(self, old: str, new: str) -> str:
         new = new.strip()
         if not new or new == old:
             return old
         if new in self.names():
-            raise ValueError(f'már van ilyen nevű profil: {new}')
+            raise ValueError(tr('a profile with this name already exists: {name}', name=new))
         self.profile(old)['name'] = new
         for rule in self.rules:
             if rule['profile'] == old:
@@ -210,35 +211,36 @@ class ConfigDraft:
         return index
 
 
-MEDIA_LABELS = {'play_pause': 'lejátszás/szünet', 'next': 'következő szám',
-                'previous': 'előző szám', 'stop': 'leállítás', 'volume_up': 'hangerő fel',
-                'volume_down': 'hangerő le', 'mute': 'némítás'}
+MEDIA_LABELS = {'play_pause': N_('play/pause'), 'next': N_('next track'),
+                'previous': N_('previous track'), 'stop': N_('stop'),
+                'volume_up': N_('volume up'), 'volume_down': N_('volume down'),
+                'mute': N_('mute')}
 
 
 def describe_action(action: str | None) -> str:
-    """Short Hungarian label for the mouse view."""
+    """Short label for the mouse view, in the interface language."""
     if action is None:
-        return 'alapértelmezett'
+        return tr('default')
     if action == 'mouse:9':
-        return 'görgetés fel'
+        return tr('scroll up')
     if action.startswith('mouse:'):
-        return f'egérgomb {action[6:]}'
+        return tr('mouse button {n}', n=action[6:])
     if action.startswith('media:'):
-        return MEDIA_LABELS.get(action[6:], 'multimédia')
+        return tr(MEDIA_LABELS.get(action[6:], N_('multimedia')))
     if action == 'dpi:stage_up':
-        return 'DPI-fokozat fel'
+        return tr('DPI stage up')
     if action == 'dpi:cycle':
-        return 'DPI-fokozatok körbe'
+        return tr('cycle DPI stages')
     if action.startswith('dpi:clutch'):
-        return f'clutch {action.split(":")[2]} DPI'
+        return tr('clutch {dpi} DPI', dpi=action.split(':')[2])
     if action == 'profile:cycle':
-        return 'következő profil'
+        return tr('next profile')
     if action == 'scroll_mode:toggle':
-        return 'görgő mód váltás'
+        return tr('toggle scroll mode')
     if action == 'disabled':
-        return 'letiltva'
+        return tr('disabled')
     if action.startswith('raw:'):
-        return 'egyéb funkció'
+        return tr('other function')
     return action.upper().replace('+', ' + ')
 
 

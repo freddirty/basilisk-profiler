@@ -6,6 +6,8 @@ import logging
 import sys
 import traceback
 
+from ..i18n import tr
+
 log = logging.getLogger('basilisk_profiler')
 
 
@@ -22,10 +24,10 @@ def install_excepthook() -> None:
             from PySide6.QtWidgets import QApplication, QMessageBox
 
             if QApplication.instance() is not None:
-                box = QMessageBox(QMessageBox.Warning, 'Basilisk Profiler – hiba',
-                                  f'Váratlan hiba történt: {exc}\n\n'
-                                  'A részletek a naplófájlban vannak, és ide kattintva is '
-                                  'kimásolhatók.')
+                box = QMessageBox(QMessageBox.Warning, tr('Basilisk Profiler – error'),
+                                  tr('An unexpected error occurred: {error}\n\n'
+                                     'The details are in the log file, and you can also '
+                                     'copy them from here.', error=exc))
                 box.setDetailedText(text)
                 box.exec()
         except Exception:  # noqa: BLE001 - the hook itself must never raise

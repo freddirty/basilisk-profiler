@@ -9,7 +9,10 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 from ..core import config as cfg
+from ..core.ui_settings import UiSettings, ui_settings_path
+from ..i18n import AUTO
 from .errors import install_excepthook, setup_logging
+from .language import apply_language
 from .main_window import MainWindow
 
 
@@ -20,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(args.config.parent / 'basilisk-profiler-gui.log')
     install_excepthook()
     app = QApplication(sys.argv)
+    apply_language(app, UiSettings(ui_settings_path(args.config)).get('language', AUTO))
     window = MainWindow(args.config)
     window.show()
     return app.exec()

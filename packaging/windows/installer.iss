@@ -33,8 +33,14 @@ CloseApplications=yes
 Name: "hungarian"; MessagesFile: "compiler:Languages\Hungarian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+hungarian.AutostartTask=Indítás a Windows-szal
+english.AutostartTask=Start with Windows
+hungarian.OtherTasks=Egyéb:
+english.OtherTasks=Other:
+
 [Tasks]
-Name: "autostart"; Description: "Indítás a Windows-szal"; GroupDescription: "Egyéb:"
+Name: "autostart"; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:OtherTasks}"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]

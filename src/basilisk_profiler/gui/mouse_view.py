@@ -16,6 +16,7 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from ..core.model import BUTTON_IDS
+from ..i18n import N_, tr
 
 ASSETS = Path(__file__).parent / 'assets'
 DRAWING = ASSETS / 'basilisk_v3_pro_ink.png'
@@ -30,7 +31,7 @@ LABEL_GAP = 8
 @dataclass(frozen=True)
 class Hotspot:
     key: str  # config button name, or an info-only id
-    title: str
+    title: str  # English; translated when painted
     rect: QRectF  # in drawing pixels
     side: str  # 'left' or 'right' label column
     editable: bool = True
@@ -41,17 +42,18 @@ class Hotspot:
 # Names follow Synapse's button map. Left and right click stay unmappable on purpose, so a
 # profile can never take away the primary buttons.
 HOTSPOTS = (
-    Hotspot('right_click', 'Jobb klikk', QRectF(130, 98, 90, 34), 'left', False),
-    Hotspot('left_click', 'Bal klikk', QRectF(170, 185, 320, 110), 'left', False),
-    Hotspot('button5', 'Elülső oldalgomb (Mouse 5)', QRectF(300, 322, 138, 30), 'left'),
-    Hotspot('side_bottom', 'Érzékenység-clutch', QRectF(250, 346, 96, 40), 'left'),
-    Hotspot('button4', 'Hátsó oldalgomb (Mouse 4)', QRectF(444, 334, 144, 44), 'left'),
-    Hotspot('dpi_cycle', 'DPI-fokozat váltás', QRectF(462, 124, 46, 32), 'right'),
-    Hotspot('scroll_mode', 'Görgő mód (racsnis / sima)', QRectF(406, 120, 50, 30), 'right'),
-    Hotspot('tilt_right', 'Görgő döntés jobbra', QRectF(346, 112, 26, 36), 'right'),
-    Hotspot('wheel_click', 'Görgőkattintás', QRectF(268, 100, 76, 52), 'right'),
-    Hotspot('tilt_left', 'Görgő döntés balra', QRectF(238, 112, 26, 36), 'right'),
-    Hotspot('profile', 'Profilváltó gomb (alul)', QRectF(620, 515, 120, 30), 'right'),
+    Hotspot('right_click', N_('Right click'), QRectF(130, 98, 90, 34), 'left', False),
+    Hotspot('left_click', N_('Left click'), QRectF(170, 185, 320, 110), 'left', False),
+    Hotspot('button5', N_('Front side button (Mouse 5)'), QRectF(300, 322, 138, 30), 'left'),
+    Hotspot('side_bottom', N_('Sensitivity clutch'), QRectF(250, 346, 96, 40), 'left'),
+    Hotspot('button4', N_('Back side button (Mouse 4)'), QRectF(444, 334, 144, 44), 'left'),
+    Hotspot('dpi_cycle', N_('DPI stage cycle'), QRectF(462, 124, 46, 32), 'right'),
+    Hotspot('scroll_mode', N_('Scroll mode (tactile / free)'), QRectF(406, 120, 50, 30),
+            'right'),
+    Hotspot('tilt_right', N_('Wheel tilt right'), QRectF(346, 112, 26, 36), 'right'),
+    Hotspot('wheel_click', N_('Wheel click'), QRectF(268, 100, 76, 52), 'right'),
+    Hotspot('tilt_left', N_('Wheel tilt left'), QRectF(238, 112, 26, 36), 'right'),
+    Hotspot('profile', N_('Profile button (bottom)'), QRectF(620, 515, 120, 30), 'right'),
 )
 
 
@@ -185,7 +187,8 @@ class MouseView(QWidget):
             # label: title + current action
             painter.setPen(color)
             align = (Qt.AlignRight if h.side == 'left' else Qt.AlignLeft) | Qt.AlignVCenter
-            text = h.title if not h.editable else f'{h.title}\n{self.labels.get(h.key, "")}'
+            title = tr(h.title)
+            text = title if not h.editable else f'{title}\n{self.labels.get(h.key, "")}'
             font = painter.font()
             font.setBold(h.key == self.selected)
             painter.setFont(font)
