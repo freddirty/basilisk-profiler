@@ -1,54 +1,60 @@
 # basilisk-profiler
 
-Nyílt forráskódú profilkezelő a **Razer Basilisk V3 Pro** egérhez (Mouse Dock Pro-val is), **Windows** és **Linux** (X11) alá:
+**English** · [Magyar](README.hu.md)
 
-- billentyűzet-funkciók kiosztása az egér gombjaira,
-- profilok tárolása az egér beépített profilhelyein,
-- automatikus profilváltás az aktív (előtérben lévő) ablak alapján.
+Open-source profile manager for the **Razer Basilisk V3 Pro** mouse (also through the Mouse Dock Pro), for **Windows** and **Linux** (X11):
 
-> **Állapot:** v0.2.2. Linuxon (.deb) működik: profilváltás ablak szerint, beépített helyek, élő állapot, dokk akkuszint-effekt, egyedi kurzor. Windowsra az utolsó kiadás a v0.1.0; az újabb funkciók Windowson még kipróbálásra várnak.
+- maps keyboard functions to the mouse buttons,
+- stores profiles in the mouse's onboard profile slots,
+- switches profiles automatically based on the active (foreground) window.
 
-## Tartalom
+> **Status:** v0.2.2. Works on Linux (.deb): per-window profile switching, onboard slots, live status, dock battery effect, custom cursor. The last Windows release is v0.1.0; the newer features have not been tried on Windows yet.
 
-| mappa | leírás |
+## Contents
+
+| folder | description |
 |---|---|
-| [`docs/basilisk-v3-pro-protocol.md`](docs/basilisk-v3-pro-protocol.md) | a USB HID protokoll a Synapse 4 forgalmának visszafejtéséből (DPI, gombkiosztás, profilhelyek, Razer-billentyű események) |
-| [`docs/architecture.md`](docs/architecture.md) | az architektúra, a tervtől való eltérések, a nyitott kérdések és a mérföldkövek |
-| [`data/session1/`](data/session1/) | dekódolt parancs- és válaszlisták az első USB-rögzítésből (a nyers pcap nem része a repónak) |
-| [`tools/razer_cmds.py`](tools/razer_cmds.py) | `tshark` mezőkimenetből listázza a 90 bájtos Razer feature reportokat |
-| [`tools/ldb.py`](tools/ldb.py) | a Synapse 4 IndexedDB (LevelDB `.ldb`, Snappy) táblájának kicsomagolója, tiszta Pythonban |
+| [`docs/basilisk-v3-pro-protocol.md`](docs/basilisk-v3-pro-protocol.md) | the USB HID protocol, reverse-engineered from Synapse 4 traffic (DPI, button mapping, profile slots, Razer key events) |
+| [`docs/architecture.md`](docs/architecture.md) | the architecture, deviations from the plan, open questions and milestones |
+| [`data/session1/`](data/session1/) | decoded command and response lists from the first USB capture (the raw pcap is not in the repository) |
+| [`tools/razer_cmds.py`](tools/razer_cmds.py) | lists the 90-byte Razer feature reports from `tshark` field output |
+| [`tools/ldb.py`](tools/ldb.py) | unpacker for the Synapse 4 IndexedDB table (LevelDB `.ldb`, Snappy), in pure Python |
 
-## Telepítés
+## Installation
 
-- **Windows:** a [Releases](https://github.com/freddirty/basilisk-profiler/releases) oldalról a `BasiliskProfiler-<verzió>-setup.exe`.
-- **Linux Mint 22 / Ubuntu 24.04 (X11):** a `basilisk-profiler_<verzió>_amd64.deb`, telepítés: `sudo apt install ./basilisk-profiler_<verzió>_amd64.deb`. A csomag a udev-szabályt is felteszi, így az egér azonnal, root nélkül elérhető. Indítás a menüből („Basilisk Profiler”); a tálcamenüben bekapcsolható az „Indítás bejelentkezéskor”. Parancssor: `basilisk-profiler cli info`.
+- **Windows:** `BasiliskProfiler-<version>-setup.exe` from the [Releases](https://github.com/freddirty/basilisk-profiler/releases) page.
+- **Linux Mint 22 / Ubuntu 24.04 (X11):** `basilisk-profiler_<version>_amd64.deb`, install with `sudo apt install ./basilisk-profiler_<version>_amd64.deb`. The package also installs the udev rule, so the mouse is available right away, without root. Start it from the menu ("Basilisk Profiler"); "Start at login" can be switched on in the tray menu. Command line: `basilisk-profiler cli info`.
 
-## Használat (fejlesztői állapot)
+## Language
 
-A Synapse-ból előbb ki kell lépni, mert ő is írja az egeret. Linuxon a `/dev/hidraw*` eléréséhez telepíteni kell a udev-szabályt (`sudo cp packaging/linux/70-basilisk-profiler.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger`), és az OpenRazer ne kezelje az egeret.
+The interface is available in English and Hungarian. By default it follows the system language; it can be changed in the tray menu under "Language". The documentation is primarily in English (`README.md`, `docs/*.md`); the Hungarian versions are the files ending in `.hu.md`.
+
+## Usage (development state)
+
+Quit Synapse first, because it writes the mouse too. On Linux, access to `/dev/hidraw*` needs the udev rule (`sudo cp packaging/linux/70-basilisk-profiler.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger`), and OpenRazer must not manage the mouse.
 
 ```
-python -m basilisk_profiler.cli info              # firmware, mód, akku, DPI-fokozatok
+python -m basilisk_profiler.cli info              # firmware, mode, battery, DPI stages
 python -m basilisk_profiler.cli button 0x05 ctrl+t
-python -m basilisk_profiler.daemon                # háttérszolgáltatás tálcaikonnal
+python -m basilisk_profiler.daemon                # background service with tray icon
 ```
 
-A háttérszolgáltatás konfigja: `%APPDATA%\basilisk-profiler\config.toml` (Windows), illetve `~/.config/basilisk-profiler/config.toml` (Linux). Első indításkor egy példafájl jön létre. A fájlt a szolgáltatás a változás után automatikusan újratölti; a legegyszerűbb a tálcaikon „Beállítások…” ablakában szerkeszteni.
+The background service's config: `%APPDATA%\basilisk-profiler\config.toml` (Windows) or `~/.config/basilisk-profiler/config.toml` (Linux). A sample file is created on first start. The service reloads the file automatically when it changes; the easiest way to edit it is the "Settings…" window from the tray icon.
 
-- Gombnevek: `button4`, `button5`, `side_bottom` (érzékenység-clutch), `wheel_click`, `tilt_left`, `tilt_right`, `scroll_mode`, `dpi_cycle`, `profile`, vagy hexában, pl. `0x34`.
-- Műveletek: `mouse:4`, `mouse:9` (görgetés fel), `key:8`, `ctrl+w`, `ctrl+shift+t`, `media:play_pause` (`next`, `previous`, `stop`, `volume_up`, `volume_down`, `mute`), `dpi:stage_up`, `dpi:cycle`, `dpi:clutch:400`, `profile:cycle`, `disabled`.
-- `onboard_slot = 1..4`: a profil az egér beépített memóriájába is kiíródik (a Synapse színei szerint 1 piros, 2 zöld, 3 kék, 4 cián). Így program nélkül, a profilgombbal is elérhető. A szolgáltatás csak akkor ír, ha a profil megváltozott.
+- Button names: `button4`, `button5`, `side_bottom` (sensitivity clutch), `wheel_click`, `tilt_left`, `tilt_right`, `scroll_mode`, `dpi_cycle`, `profile`, or in hex, e.g. `0x34`.
+- Actions: `mouse:4`, `mouse:9` (scroll up), `key:8`, `ctrl+w`, `ctrl+shift+t`, `media:play_pause` (`next`, `previous`, `stop`, `volume_up`, `volume_down`, `mute`), `dpi:stage_up`, `dpi:cycle`, `dpi:clutch:400`, `profile:cycle`, `disabled`.
+- `onboard_slot = 1..4`: the profile is also written to the mouse's onboard memory (Synapse's colours: 1 red, 2 green, 3 blue, 4 cyan), so it can be selected with the profile button without the program. The service only writes when the profile has changed.
 
-## Eszköz-azonosítók
+## Device IDs
 
-| eszköz | VID:PID |
+| device | VID:PID |
 |---|---|
 | Razer Mouse Dock Pro | 1532:00A4 |
-| Basilisk V3 Pro (vezetékes) | 1532:00AA |
-| Basilisk V3 Pro (vezeték nélküli) | 1532:00AB |
+| Basilisk V3 Pro (wired) | 1532:00AA |
+| Basilisk V3 Pro (wireless) | 1532:00AB |
 
-## Licenc
+## License
 
-GPL-2.0-or-later – lásd: [LICENSE](LICENSE). A protokoll keretformátuma megegyezik az [openrazer](https://github.com/openrazer/openrazer) projektével.
+GPL-2.0-or-later, see [LICENSE](LICENSE). The protocol's frame format is the same as in the [openrazer](https://github.com/openrazer/openrazer) project.
 
-A projekt nem kapcsolódik a Razer Inc.-hez. A „Razer”, a „Basilisk” és a „Synapse” a Razer Inc. védjegyei.
+This project is not affiliated with Razer Inc. "Razer", "Basilisk" and "Synapse" are trademarks of Razer Inc.

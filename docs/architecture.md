@@ -1,130 +1,143 @@
-# Architektúra
+# Architecture
 
-Állapot: jóváhagyva (2026-11-01), a v0.2.2 állapotára frissítve (2026-11-04). Ez a dokumentum a megvalósítás alapja; ami a jóváhagyott tervtől eltér, azt a „Változások a jóváhagyott tervhez képest” rész sorolja fel.
+**English** · [Magyar](architecture.hu.md)
 
-Egy könnyű, nyílt forráskódú profilkezelő Windowsra és Linux Mintre (Cinnamon, X11). A Synapse nélkül kezeli a Basilisk V3 Pro gombkiosztását, DPI-jét és profiljait, és az aktív ablak alapján vált profilt. Linuxon ezen felül profilonként egyedi, nagy kurzort mutathat (pl. ARPG játékokhoz), és kezeli a Mouse Dock Pro akkuszint-világítását.
+Status: approved (2026-11-01), updated to the state of v0.2.2 (2026-11-04). This document is the basis of the implementation; whatever differs from the approved plan is listed under "Changes from the approved plan".
 
-## Kiadások
+A lightweight, open-source profile manager for Windows and Linux Mint (Cinnamon, X11). Without Synapse, it manages the Basilisk V3 Pro's button mapping, DPI and profiles, and switches profiles based on the active window. On Linux it can also show a big custom cursor per profile (e.g. for ARPG games), and it manages the Mouse Dock Pro's battery level lighting.
 
-| Verzió | Platform | Tartalom |
+## Releases
+
+| Version | Platform | Contents |
 | --- | --- | --- |
-| v0.1.0 | Windows (telepítő) | Protokoll, CLI, háttérszolgáltatás, grafikus felület, beépített helyek, Synapse-import |
-| v0.2.0 | csak Linux (.deb) | Linux port (hidraw, X11 ablakfigyelés, autostart, udev a csomagban), élő állapot: profilbetű a tálcaikonon, DPI/fokozat/akku a tooltipben, saját DPI-kijelző |
-| v0.2.1 | csak Linux (.deb) | Tálcamenü-kapcsoló a dokk gyári akkuszint-effektjéhez |
-| v0.2.2 | csak Linux (.deb) | Egyedi kurzor profilonként (YoloMouse-szerű nagy kurzor), Last Epoch alatt kipróbálva |
+| v0.1.0 | Windows (installer) | Protocol, CLI, background service, graphical interface, onboard slots, Synapse import |
+| v0.2.0 | Linux only (.deb) | Linux port (hidraw, X11 window watching, autostart, udev in the package), live status: profile letter on the tray icon, DPI/stage/battery in the tooltip, own DPI display |
+| v0.2.1 | Linux only (.deb) | Tray menu switch for the dock's factory battery level effect |
+| v0.2.2 | Linux only (.deb) | Custom cursor per profile (YoloMouse-style big cursor), tried in Last Epoch |
 
-A Windows-telepítő a v0.2.0 óta nem része a kiadásoknak: a Windows-os élő állapot (DPI-jelzés) még nincs megoldva lekérdezés nélkül, és valódi Windows-gépen sincs kipróbálva. A CI a telepítőt pull requesteken továbbra is megépíti.
+The Windows installer has not been part of the releases since v0.2.0: the live status on Windows (DPI display) is not solved yet without polling, and it has not been tried on a real Windows machine. CI still builds the installer on pull requests.
 
-## Cél és hatókör
+## Goal and scope
 
-| Benne van | Kívül esik |
+| In scope | Out of scope |
 | --- | --- |
-| Gomb → billentyű (módosítókkal), egérgomb, multimédia, DPI- és profilfunkció, letiltás | Hypershift (második réteg) |
-| DPI-fokozatok profilonként | Az egér RGB / Chroma effektjei (OpenRazer, OpenRGB kezeli) |
-| Profilok mentése az egér 4 beépített helyére | Makrók (később bővíthető) |
-| Automatikus váltás az aktív ablak alapján | Firmware-frissítés, Razer-fiók, felhő |
-| Grafikus felület az egér képével, tálcás háttérszolgáltatás, konfigfájl | Más Razer-eszközök |
-| Élő állapot: aktív profil, DPI, fokozat, akku (eseményvezérelten) | Wayland (csak X11) |
-| A dokk gyári akkuszint-effektjének be- és kikapcsolása | Saját színátmenet számítása a dokkra (a firmware maga csinálja) |
-| Egyedi kurzor profilonként (csak Linux, X11) | Kurzorképek terjesztése a programmal |
+| Button → key (with modifiers), mouse button, multimedia, DPI and profile functions, disabling | Hypershift (second layer) |
+| DPI stages per profile | The mouse's RGB / Chroma effects (handled by OpenRazer, OpenRGB) |
+| Saving profiles to the mouse's 4 onboard slots | Macros (can be added later) |
+| Automatic switching based on the active window | Firmware updates, Razer account, cloud |
+| Graphical interface with a picture of the mouse, tray background service, config file | Other Razer devices |
+| Live status: active profile, DPI, stage, battery (event-driven) | Wayland (X11 only) |
+| Switching the dock's factory battery level effect on and off | Computing our own colour gradient for the dock (the firmware does it) |
+| Custom cursor per profile (Linux, X11 only) | Distributing cursor images with the program |
+| English and Hungarian interface | Further languages (the catalogue makes them easy to add) |
 
-Céleszköz: Basilisk V3 Pro (USB PID 0x00AA, vezeték nélkül 0x00AB) a Mouse Dock Pro-n keresztül (PID 0x00A4).
+Target device: Basilisk V3 Pro (USB PID 0x00AA, wireless 0x00AB) through the Mouse Dock Pro (PID 0x00A4).
 
-## Alapelvek
+## Principles
 
-Ezeket a felhasználó szabta meg, minden új funkcióra érvényesek:
+Set by the user; they apply to every new feature:
 
-- **Nincs rendszeres lekérdezés.** Az egeret és a dokkot nem kérdezzük le időzítve (másodpercenként sem). Az állapot az eszköz eseményeiből jön, és csak meglévő eseményekhez kötve olvasunk (profilváltás, DPI-gomb, újracsatlakozás). A szolgáltatás belső 100 ms-os ciklusa (`tick`) csak sorokat ürít, eszközhöz nem nyúl, ha nincs teendő.
-- **Előbb a terv.** Új funkció kódolása csak a terv egyeztetése után indul.
-- **Hardveres próba mentéssel.** Próba előtt mentés (`cli backup`), utána visszaállítás és bájtra egyező visszaolvasás.
-- **Beolvasztás és kiadás csak kifejezett jóváhagyással**, PR-onként és kiadásonként külön.
-- **Flash kímélése.** A beépített helyekre csak változáskor írunk (`onboard-state.json` tárolja, mi van kiírva); a dokk effektjét csak akkor írjuk, ha eltér a felhasználó választásától.
+- **No routine polling.** The mouse and the dock are not queried on a timer (not even once a second). The status comes from the device's events, and reads are only tied to existing events (profile switch, DPI button, reconnect). The service's internal 100 ms loop (`tick`) only drains queues and does not touch the device when there is nothing to do.
+- **Plan first.** Coding a new feature only starts after the plan has been agreed.
+- **Hardware tests with a backup.** Before a test, a backup (`cli backup`); afterwards a restore and a byte-for-byte matching read-back.
+- **Merges and releases only with explicit approval**, separately for each PR and each release.
+- **Spare the flash.** The onboard slots are only written on change (`onboard-state.json` records what has been written); the dock's effect is only written when it differs from the user's choice.
 
-## Amit a visszafejtésből tudunk
+## What we know from reverse engineering
 
-A gombkiosztást maga az egér végzi, ezért egyik rendszeren sem kell szoftveres billentyű-szimuláció. Elég a beállításokat HID-parancsokkal beírni az egérbe. Részletek: [basilisk-v3-pro-protocol.md](basilisk-v3-pro-protocol.md).
+The mouse does the button mapping itself, so neither system needs software key simulation. It is enough to write the settings into the mouse with HID commands. Details: [basilisk-v3-pro-protocol.md](basilisk-v3-pro-protocol.md).
 
-- **Keret:** 90 bájtos HID feature report a dock 0. interfészén (SET_REPORT, utána GET_REPORT visszaolvasás), OpenRazer-féle felépítéssel és XOR-ellenőrzőösszeggel. Válasz: 0x02 = OK, 0x01 = foglalt. A transaction id 0x1F: a parancs az egérhez megy; **0xFF: a dokk maga válaszol** (a dokk saját világítása).
+- **Frame:** 90-byte HID feature report on the dock's interface 0 (SET_REPORT, then GET_REPORT read-back), with OpenRazer's layout and an XOR checksum. Response: 0x02 = OK, 0x01 = busy. Transaction id 0x1F: the command goes to the mouse; **0xFF: the dock answers itself** (the dock's own lighting).
 
-| Funkció | Class/cmd | Megjegyzés |
+| Function | Class/cmd | Note |
 | --- | --- | --- |
-| Gombkiosztás írása / olvasása | 02/0C · 02/8C | Az OpenRazerben nincs. Arg.: hely, gomb ID, hypershift, típus, hossz, adat |
-| DPI-fokozatok írása / olvasása | 04/06 · 04/86 | Hely, aktív fokozat, darab, fokozatonként X/Y (16 bit, big-endian) |
-| Aktuális DPI | 04/05 · 04/85 | Hely, X, Y |
-| Aktív hely kiválasztása / lekérdezése | 05/04 · 05/84 | `[hely, 0]`; Synapse nélkül, normal mode-ban kipróbálva |
-| Helyek listája | 05/81 | → `05 01 02 03 04 05` |
-| Eszközmód | 00/04 · 00/84 | 0x03 = driver mode (Synapse), egyébként normal mode |
-| Akku / töltés | 07/80 · 07/84 | Olvasás |
-| Dokk effekt (0xFF tid, LED 0x0F) | 0F/02 · 0F/82 | 1-es hely = tartós, 0-s = éppen látható szín; 0x0D = gyári akkuszint-effekt |
-| Profilhely írásakor futó parancsok | 02/14, 02/16, 02/17, 05/02, 05/03, 05/08, 00/C0 | A Synapse küldi; a mi írásainkhoz nem kellenek, jelentésük részben nyitott |
+| Write / read button mapping | 02/0C · 02/8C | Not in OpenRazer. Args: slot, button id, hypershift, type, length, data |
+| Write / read DPI stages | 04/06 · 04/86 | Slot, active stage, count, X/Y per stage (16 bit, big-endian) |
+| Current DPI | 04/05 · 04/85 | Slot, X, Y |
+| Select / query the active slot | 05/04 · 05/84 | `[slot, 0]`; tried without Synapse, in normal mode |
+| List of slots | 05/81 | → `05 01 02 03 04 05` |
+| Device mode | 00/04 · 00/84 | 0x03 = driver mode (Synapse), otherwise normal mode |
+| Battery / charging | 07/80 · 07/84 | Read |
+| Dock effect (tid 0xFF, LED 0x0F) | 0F/02 · 0F/82 | Slot 1 = persistent, slot 0 = colour shown now; 0x0D = factory battery level effect |
+| Commands sent when writing a profile slot | 02/14, 02/16, 02/17, 05/02, 05/03, 05/08, 00/C0 | Sent by Synapse; not needed for our writes, meaning partly open |
 
-- **Kimenettípusok (02/0C):** 0x00 letiltva, 0x01 egérgomb (9 = görgetés fel), 0x02 billentyű [módosító, HID usage], 0x06 DPI-funkció (fel, körbe, clutch), 0x07 profilfunkció, 0x0A multimédia, 0x0E ismétlődő görgetés, 0x12 görgő mód.
-- **Gomb ID-k:** 0x03 görgőkattintás, 0x04 Button4, 0x05 Button5, 0x0E profilgomb, 0x0F hüvelykujj (clutch), 0x34 / 0x35 görgődöntés, 0x60 DPI-gomb, 0x6A görgő mód. A bal és jobb klikket szándékosan nem kezeljük.
-- **Tárolóhelyek:** 0x01 = élő hely (fehér LED), 0x02–0x05 = a 4 beépített hely (piros, zöld, kék, cián). Az egér egyszerre pontosan egy helyet használ, a nem aktív helyre írás nem látszik.
-- **Események (dock 1. interfész, report ID 5):** `05 02` DPI megváltozott, `05 31` akkuszint, `05 09` kapcsolat/ébredés. Linuxon hidraw-on olvassuk; a kernel minden olvasónak saját másolatot ad.
-- **Profilgomb:** normal mode-ban az egér maga lép a helyek között (fehér → piros → zöld → kék → cián). Driver mode-ban csak jelez (report ID 4, kód 0x50), és a hostnak kell váltania.
-- **Synapse-profilok:** a Synapse 4 Chromium IndexedDB-ben tárolja őket JSON-dokumentumként; a `core/leveldb.py` és a `core/synapse_import.py` kicsomagolja és importálja őket (Linuxon egy Windowsról átmásolt mappából).
+- **Output types (02/0C):** 0x00 disabled, 0x01 mouse button (9 = scroll up), 0x02 key [modifier, HID usage], 0x06 DPI function (up, cycle, clutch), 0x07 profile function, 0x0A multimedia, 0x0E repeated scroll, 0x12 scroll mode.
+- **Button ids:** 0x03 wheel click, 0x04 Button4, 0x05 Button5, 0x0E profile button, 0x0F thumb (clutch), 0x34 / 0x35 wheel tilt, 0x60 DPI button, 0x6A scroll mode. Left and right click are deliberately not handled.
+- **Storage slots:** 0x01 = live slot (white LED), 0x02–0x05 = the 4 onboard slots (red, green, blue, cyan). The mouse uses exactly one slot at a time; writing to an inactive slot has no visible effect.
+- **Events (dock interface 1, report ID 5):** `05 02` DPI changed, `05 31` battery level, `05 09` connection/wake. Read through hidraw on Linux; the kernel gives every reader its own copy.
+- **Profile button:** in normal mode the mouse steps through the slots itself (white → red → green → blue → cyan). In driver mode it only signals (report ID 4, code 0x50), and the host has to switch.
+- **Synapse profiles:** Synapse 4 stores them as JSON documents in a Chromium IndexedDB; `core/leveldb.py` and `core/synapse_import.py` unpack and import them (on Linux from a folder copied over from Windows).
 
-## Profilváltási stratégia
+## Profile switching strategy
 
-A program normal mode-ban hagyja az egeret, driver mode-ot nem használ.
+The program leaves the mouse in normal mode; it does not use driver mode.
 
-1. A felhasználó legfeljebb 4 profilt rendel beépített helyhez (`onboard_slot = 1..4`). Ezeket a szolgáltatás a 0x02–0x05 helyekre írja, de csak ha a tartalmuk megváltozott.
-2. Ablakváltáskor (0,4 mp-es csillapítás után):
-   - ha a profil beépített helyen van és naprakész, a szolgáltatás csak kiválasztja a helyet (05/04);
-   - különben kiírja az élő helyre (0x01, ~15 parancs, ~1 mp), és azt teszi aktívvá.
-3. A profilgombot az egér maga kezeli. A gombbal választott hely a következő profilváltásig marad érvényben.
-4. Kilépéskor a szolgáltatás visszaállítja az induláskor aktív helyet, és normal mode-ot hagy.
+1. The user assigns at most 4 profiles to onboard slots (`onboard_slot = 1..4`). The service writes these to slots 0x02–0x05, but only if their contents changed.
+2. On a window change (after a 0.4 s debounce):
+   - if the profile is in an onboard slot and up to date, the service only selects the slot (05/04);
+   - otherwise it writes it to the live slot (0x01, ~15 commands, ~1 s) and makes that active.
+3. The mouse handles the profile button itself. A slot chosen with the button holds until the next profile switch.
+4. On exit the service restores the slot that was active at start and leaves normal mode.
 
-Ezért az egér program nélkül, más gépen is a beépített profilokkal működik, a program futása alatt pedig korlátlan számú profil használható.
+So the mouse works with its onboard profiles without the program, even on another computer, and while the program runs any number of profiles can be used.
 
-## Komponensek
+## Components
 
 ```
- Beállítóablak (Qt) --ír--> config.toml <--figyeli (mtime)--+
-   | ablaklista, Synapse-import                            |
-   |                                                       |
-   +-- ugyanabban a folyamatban, ha a tálcáról nyílik --> Háttérszolgáltatás (Service)
-                                                          | szabálymotor, beépített helyek,
-   Ablakfigyelő (szál) ----- aktív ablak --------------->  | élő állapot, dokk, kurzor
-   Eseményolvasó (szál, Linux) - DPI / akku ------------>  |
+ Settings window (Qt) --writes--> config.toml <--watches (mtime)--+
+   | window list, Synapse import                                  |
+   |                                                              |
+   +-- in the same process when opened from the tray --> Background service (Service)
+                                                          | rule engine, onboard slots,
+   Window watcher (thread) --- active window ----------->  | live status, dock, cursor
+   Event reader (thread, Linux) - DPI / battery -------->  |
                                                           v
-                         core: protokoll, eszköz, profilmodell, konfig, kurzor, Synapse-import
+                         core: protocol, device, profile model, config, cursor, Synapse import
                                                           v
-                         HID-adapter (Windows: hidapi vagy hid.dll · Linux: hidraw + udev)
+                         HID adapter (Windows: hidapi or hid.dll · Linux: hidraw + udev)
                                                           v
-                         Mouse Dock Pro → egér
+                         Mouse Dock Pro → mouse
 
-   Tálca (Qt): ikon a profil kezdőbetűjével, tooltip, DPI-kijelző, menü
-   Kurzorréteg (szál, Linux/X11): rejtett rendszerkurzor + kattintásáteresztő ARGB ablak
+   Tray (Qt): icon with the profile's first letter, tooltip, DPI display, menu
+   Cursor layer (thread, Linux/X11): hidden system cursor + click-through ARGB window
 ```
 
-- Egy folyamat fut: a tálcás alkalmazás (`basilisk-profiler`, illetve `python -m basilisk_profiler.daemon`). Ebben él a szolgáltatás, a tálca, és innen nyílik a beállítóablak is. Külön IPC nincs: a beállítóablak csak a konfigfájlt írja, a szolgáltatás a fájl változására újratölt. A beállítóablak önállóan is indítható (`python -m basilisk_profiler.gui`), ekkor sem nyúl az eszközhöz.
-- Az eszközt csak a szolgáltatás éri el; egy zárfájl (`daemon.lock`) biztosítja, hogy csak egy példány fusson.
-- A szálak (ablakfigyelő, eseményolvasó) csak sorba tesznek; minden eszközművelet a szolgáltatás `tick()` hívásában, a Qt időzítőjén fut.
-- Alvó egérnél a dokk hibát vagy időtúllépést ad; ilyenkor a szolgáltatás 5 mp múlva próbálja újra megnyitni az eszközt, és a régi állapotot mutatja.
+- One process runs: the tray application (`basilisk-profiler`, or `python -m basilisk_profiler.daemon`). The service and the tray live in it, and the settings window opens from it too. There is no separate IPC: the settings window only writes the config file, and the service reloads when the file changes. The settings window can also be started on its own (`python -m basilisk_profiler.gui`); it does not touch the device then either.
+- Only the service accesses the device; a lock file (`daemon.lock`) makes sure only one instance runs.
+- The threads (window watcher, event reader) only enqueue; every device operation runs in the service's `tick()` call, on the Qt timer.
+- With a sleeping mouse the dock returns an error or times out; the service then tries to reopen the device after 5 s and shows the old status.
 
-### Élő állapot
+### Live status
 
-Profilváltáskor és DPI-eseménykor a szolgáltatás egyszer kiolvassa az aktív hely DPI-tábláját (fokozat sorszáma), az akkuszintet az eseményekből veszi. A tálcaikonon az aktív profil kezdőbetűje látszik (zöld = fut, szürke = szünetel, piros = konfighiba), a tooltipben a profil, a DPI a fokozattal és az akku. DPI-váltáskor egy saját, fókuszt el nem vevő felirat jelenik meg az egérmutató mellett 1,2 mp-re (kikapcsolható). A beállítóablak alsó sávja ugyanezt mutatja.
+On a profile switch and on a DPI event the service reads the active slot's DPI table once (stage number); the battery level comes from the events. The tray icon shows the active profile's first letter (green = running, grey = paused, red = config error), the tooltip the profile, the DPI with its stage, and the battery. On a DPI change, a label of our own that does not take focus appears next to the pointer for 1.2 s (can be switched off). The settings window's status bar shows the same.
 
-### Dokk akkuszint-világítás
+### Dock battery level lighting
 
-A dokk firmware-e maga számolja a színt az akkuszintből (0x0D effekt, piros → sárga → zöld), ehhez program nem kell. A tálcamenü „Dokk: akkuszint-effekt” kapcsolója:
+The dock's firmware computes the colour from the battery level itself (effect 0x0D, red → yellow → green); no program is needed for that. The tray menu's "Dock: battery level effect" switch:
 
-- induláskor és újracsatlakozáskor egyszer kiolvassa a dokk effektjét, és csak akkor ír, ha eltér a választástól;
-- bekapcsoláskor beállítja a 0x0D effektet, és a következő akkujelzésig az utolsó ismert akkuértékből becsült színt mutatja;
-- kikapcsoláskor visszaállítja a korábbi effektet (`dock-state.json`), vagy ha az nem ismert, statikus fehéret.
+- at start and on reconnect reads the dock's effect once, and only writes if it differs from the choice;
+- when switched on, sets effect 0x0D and, until the next battery report, shows a colour estimated from the last known battery value;
+- when switched off, restores the previous effect (`dock-state.json`), or static white if that is not known.
 
-### Egyedi kurzor (Linux)
+### Custom cursor (Linux)
 
-A profilban megadható egy `.cur` fájl és egy nagyítás (`cursor`, `cursor_scale`). Amikor az ilyen profil ablaka aktív, a kurzorréteg XFixes-szel elrejti a rendszerkurzort, és egy mindig felül lévő, kattintásáteresztő, override-redirect ARGB ablakban mutatja a képet. A réteg az XInput2 nyers mozgáseseményeire mozdul, lekérdezés nincs benne. A játék folyamatához nem nyúl (anti-cheat szempontból semleges). Ha a program leáll, az X szerver magától visszaadja a normál kurzort.
+A profile can name a `.cur` file and a scale (`cursor`, `cursor_scale`). While a window of such a profile is active, the cursor layer hides the system cursor with XFixes and shows the image in an always-on-top, click-through, override-redirect ARGB window. The layer moves on XInput2 raw motion events; there is no polling in it. It does not touch the game's process (neutral as far as anti-cheat goes). If the program stops, the X server gives back the normal cursor by itself.
 
-Feltétele, hogy a kompozitor teljes képernyős ablaknál is bekapcsolva maradjon (Cinnamon: `unredirect-fullscreen-windows=false`), és hogy a játék rendszerkurzort használjon. Last Epoch (Steam, Proton) alatt kipróbálva: nem késik, pontosan céloz.
+It needs the compositor to stay on for full-screen windows too (Cinnamon: `unredirect-fullscreen-windows=false`), and the game to use the system cursor. Tried in Last Epoch (Steam, Proton): no lag, accurate aim.
 
-A YoloMouse kurzorfájljainak nincs licence, ezért a program nem tartalmaz kurzorképet: a felhasználó a saját gépén lévő fájlt választja ki (a relatív útvonal a `<konfigmappa>/cursors/` alá mutat).
+YoloMouse's cursor files have no licence, so the program comes with no cursor image: the user chooses a file on their own computer (a relative path points under `<config folder>/cursors/`).
 
-## Konfiguráció és állapotfájlok
+### Interface language
+
+The interface is available in English and Hungarian. By default it follows the system language (Hungarian on a Hungarian system, English for every other language), and it can be changed in the tray menu's "Language" submenu; the choice is stored in `tray.json`, and the stand-alone settings window uses it too.
+
+- The texts in the code are English. `tr('…')` translates to the chosen language; `N_('…')` only marks the texts of module-level tables, which are translated when shown. The Hungarian texts are in the `i18n/hu.py` dictionary, keyed by the English text; a missing translation shows the English.
+- There is no translation build step (Qt `.ts`/`.qm`, gettext). `tests/test_i18n.py` checks that every marked text has a Hungarian entry, there are no stale entries, the `{fields}` match, and no Hungarian text is left in the code.
+- Qt's own texts (OK/Cancel, file dialog) come from the `qtbase_hu.qm` shipped with PySide6.
+- The tray menu switches at once; an already open settings window on its next opening, so unsaved edits are not lost.
+- Staying English: the log, the texts of config and cursor errors, and the CLI.
+
+## Configuration and state files
 
 ```toml
 [default]
@@ -140,153 +153,158 @@ button5 = "mouse:5"
 
 [[profile]]
 name = "browser"
-onboard_slot = 4            # opcionális: beírva az egérbe is (1 piros … 4 cián)
+onboard_slot = 4            # optional: also written to the mouse (1 red … 4 cyan)
 [profile.buttons]
 button5 = "ctrl+t"
 side_bottom = "ctrl+w"
 
 [[profile]]
 name = "last epoch"
-cursor = "yolomouse-pink.cur"   # saját .cur fájl; relatív = <konfigmappa>/cursors/
+cursor = "yolomouse-pink.cur"   # own .cur file; relative = <config folder>/cursors/
 cursor_scale = 2.0
 
 [[rule]]
-match_process = "brave"     # vagy match_class / match_title (regex); az első találat nyer
+match_process = "brave"     # or match_class / match_title (regex); the first match wins
 profile = "browser"
 ```
 
-A konfigmappában (Windows: `%APPDATA%\basilisk-profiler\`, Linux: `~/.config/basilisk-profiler/`):
+In the config folder (Windows: `%APPDATA%\basilisk-profiler\`, Linux: `~/.config/basilisk-profiler/`):
 
-| Fájl | Tartalom |
+| File | Contents |
 | --- | --- |
-| `config.toml` | Profilok és szabályok; kézzel is szerkeszthető, első indításkor példafájl jön létre |
-| `onboard-state.json` | Melyik beépített helyre mi van kiírva (hash), hogy újraindításkor ne írjuk újra a flash-t |
-| `dock-state.json` | A dokk effektje az akkuszint-effekt bekapcsolása előtt |
-| `tray.json` | Tálcabeállítások (DPI-kijelző, dokk-kapcsoló) |
-| `cursors/` | A felhasználó kurzorfájljai |
-| `daemon.lock`, `basilisk-profiler.log` | Egypéldányos zár, napló |
+| `config.toml` | Profiles and rules; can be edited by hand, a sample file is created on first start |
+| `onboard-state.json` | What has been written to which onboard slot (hash), so the flash is not rewritten on restart |
+| `dock-state.json` | The dock's effect before the battery level effect was switched on |
+| `tray.json` | Tray settings (DPI display, dock switch, language) |
+| `cursors/` | The user's cursor files |
+| `daemon.lock`, `basilisk-profiler.log` | Single-instance lock, log |
 
-## Platformspecifikus részek
+## Platform-specific parts
 
-| Terület | Windows | Linux Mint (Cinnamon, X11) |
+| Area | Windows | Linux Mint (Cinnamon, X11) |
 | --- | --- | --- |
-| Eszközelérés | hidapi, ha telepítve van, különben beépített ctypes-os `hid.dll`-burkoló (`platform/win/hid.py`) | a cython-hidapi `hidraw` modulja → /dev/hidrawN (soha a libusb-s `hid` modul, mert az leválasztja az egér kernel-driverét); udev-szabály a 1532:00A4 / 00AA / 00AB eszközökre, a .deb telepíti |
-| Eszközesemények (DPI, akku) | **Még nincs**: a DPI csak profilváltáskor frissül | `platform/linux/events.py`: a dock 1. interfészének report 5 eseményei, `select`-tel, lekérdezés nélkül |
-| Aktív ablak | SetWinEventHook(EVENT_SYSTEM_FOREGROUND) → folyamatnév, ablakcím | python-xlib: _NET_ACTIVE_WINDOW figyelése → WM_CLASS, _NET_WM_PID → folyamatnév, cím (Flatpaknál a WM_CLASS) |
-| Ablaklista a szabályszerkesztőhöz | EnumWindows | _NET_CLIENT_LIST |
-| Egyedi kurzor | **Még nincs** | `platform/linux/cursor.py`: XFixes + ARGB réteg + XInput2 |
-| Tálca | Qt QSystemTrayIcon | Qt QSystemTrayIcon |
-| Automatikus indítás | HKCU\...\Run | ~/.config/autostart .desktop |
-| Ütközés | A Synapse-t le kell állítani, különben felülírja a beállításokat | Ha az OpenRazer `razermouse` drivere vagy az `openrazer-daemon` fut, a CLI és a szolgáltatás figyelmeztet |
+| Device access | hidapi if installed, otherwise a built-in ctypes `hid.dll` wrapper (`platform/win/hid.py`) | cython-hidapi's `hidraw` module → /dev/hidrawN (never the libusb `hid` module, because it detaches the mouse's kernel driver); udev rule for the 1532:00A4 / 00AA / 00AB devices, installed by the .deb |
+| Device events (DPI, battery) | **Not yet**: the DPI only updates on a profile switch | `platform/linux/events.py`: report 5 events of the dock's interface 1, with `select`, without polling |
+| Active window | SetWinEventHook(EVENT_SYSTEM_FOREGROUND) → process name, window title | python-xlib: watching _NET_ACTIVE_WINDOW → WM_CLASS, _NET_WM_PID → process name, title (WM_CLASS for Flatpak) |
+| Window list for the rule editor | EnumWindows | _NET_CLIENT_LIST |
+| Custom cursor | **Not yet** | `platform/linux/cursor.py`: XFixes + ARGB layer + XInput2 |
+| Tray | Qt QSystemTrayIcon | Qt QSystemTrayIcon |
+| Autostart | HKCU\...\Run | ~/.config/autostart .desktop |
+| Conflicts | Synapse has to be stopped, otherwise it overwrites the settings | If OpenRazer's `razermouse` driver or `openrazer-daemon` runs, the CLI and the service warn |
 
-## Technológia és repo-szerkezet
+## Technology and repository layout
 
-Python 3.11+ és PySide6 (Qt 6).
+Python 3.11+ and PySide6 (Qt 6).
 
-| Réteg | Választás |
+| Layer | Choice |
 | --- | --- |
-| HID | cython-hidapi `hidraw` (Linux), hidapi vagy `hid.dll` (Windows) |
-| Konfig | TOML (`tomllib` olvasás, `tomli-w` írás) |
-| GUI | PySide6, az egér képe (PNG) kattintható gombterületekkel |
-| Ablakfigyelés, kurzor | `pywin32` (Windows), `python-xlib` XFixes / XInput2 / Shape kiterjesztésekkel (Linux) |
-| Csomagolás | PyInstaller + Inno Setup (Windows), PyInstaller + .deb (Linux, Qt a csomagban) |
+| HID | cython-hidapi `hidraw` (Linux), hidapi or `hid.dll` (Windows) |
+| Config | TOML (`tomllib` to read, `tomli-w` to write) |
+| GUI | PySide6, picture of the mouse (PNG) with clickable button areas; English and Hungarian interface (own catalogue, `i18n/`) |
+| Window watching, cursor | `pywin32` (Windows), `python-xlib` with the XFixes / XInput2 / Shape extensions (Linux) |
+| Packaging | PyInstaller + Inno Setup (Windows), PyInstaller + .deb (Linux, Qt in the package) |
 
 ```
 src/basilisk_profiler/
   core/        protocol.py, device.py, model.py, config.py, keys.py, events.py,
-               cursor.py (.cur betöltés), leveldb.py, synapse_import.py
-  platform/    __init__.py (platformválasztás)
+               cursor.py (.cur loading), leveldb.py, synapse_import.py,
+               ui_settings.py (tray.json)
+  i18n/        __init__.py (tr, N_, language choice), hu.py (Hungarian texts)
+  platform/    __init__.py (platform selection)
                win/   hid.py, foreground.py, autostart.py
                linux/ x11.py, events.py, cursor.py, autostart.py, conflicts.py
-  daemon/      service.py (szabálymotor is), tray.py, __main__.py
-  gui/         main_window.py, mouse_view.py, draft.py, keymap.py, errors.py,
+  daemon/      service.py (also the rule engine), tray.py, __main__.py
+  gui/         main_window.py, mouse_view.py, draft.py, keymap.py, errors.py, language.py,
                assets/basilisk_v3_pro_ink.png
   cli.py       info, dpi, button, mode, query, backup, restore
 tools/         razer_cmds.py, extract_frames.py, ldb.py, prepare_drawing.py,
                cursor_overlay_probe.py
-docs/          architecture.md, basilisk-v3-pro-protocol.md, capture-2-plan.md
-data/          session1/, session2/ (dekódolt rögzítések)
-packaging/     windows/ (spec, Inno Setup), linux/ (spec, build-deb.sh, udev-szabály, .desktop)
-tests/         pytest, a hardvert hamis eszköz helyettesíti
+docs/          architecture.md, basilisk-v3-pro-protocol.md (English),
+               *.hu.md (Hungarian versions), capture-2-plan.md (old work plan, in Hungarian)
+data/          session1/, session2/ (decoded captures)
+packaging/     windows/ (spec, Inno Setup), linux/ (spec, build-deb.sh, udev rule, .desktop)
+tests/         pytest, a fake device stands in for the hardware
 ```
 
-Kiadás: verziócímke (pl. `v0.2.2`) feltöltésekor a GitHub Actions megépíti a .deb csomagot (ubuntu-24.04, a Mint 22 alapja), lefuttat rajta egy füstpróbát, és GitHub Release-ként közzéteszi. A Windows-telepítő címkére jelenleg nem készül (lásd Kiadások). Minden pull requesten lefutnak a tesztek (pytest, Windows és Ubuntu, Python 3.11 és 3.12) és a lint (ruff).
+Release: when a version tag (e.g. `v0.2.2`) is pushed, GitHub Actions builds the .deb package (ubuntu-24.04, the base of Mint 22), runs a smoke test on it, and publishes it as a GitHub Release. The Windows installer is currently not built for tags (see Releases). Every pull request runs the tests (pytest, Windows and Ubuntu, Python 3.11 and 3.12) and the lint (ruff).
 
-Licenc: GPL-2.0-or-later.
+License: GPL-2.0-or-later.
 
-## Változások a jóváhagyott tervhez képest
+## Changes from the approved plan
 
-| Eredeti terv | Ami lett | Miért |
+| Original plan | What it became | Why |
 | --- | --- | --- |
-| A program driver mode-ban kezeli a profilgombot | Normal mode marad, az egér maga lép a helyek között | Normal mode-ban a beépített helyek önállóan működnek, és a hely kiválasztása (05/04) is ismert lett |
-| Beépített profilnál is az élő helyre írás | Beépített profilnál csak hely-kiválasztás | A 2. rögzítés és a hardveres próba megmutatta a 05/04-et; a nem aktív helyre írás amúgy sem látszik |
-| GUI ↔ szolgáltatás IPC-vel | Nincs IPC: egy folyamat, a konfigfájl a közös felület | Egyszerűbb, és a beállítóablak úgysem nyúl az eszközhöz |
-| `[device] dpi_stages` közösen | `dpi_stages` / `dpi_active` profilonként | Minden helynek saját DPI-táblája van |
-| hidapi Windowson | hidapi, ha telepítve van, különben saját `hid.dll`-burkoló | Nem kell hozzá külön csomag, és nulla hozzáférési joggal is megnyitható az a gyűjtemény, amit a Windows magának tart |
-| RGB teljesen kívül esik | A dokk gyári akkuszint-effektje be- és kikapcsolható | Felhasználói igény; a firmware számolja a színt |
-| – | Élő állapot és DPI-kijelző | Felhasználói igény a Linux port próbája közben |
-| – | Egyedi kurzor profilonként (Linux) | Felhasználói igény (YoloMouse-pótlás Linuxon) |
-| `packaging/debian/`, SVG egérkép, `daemon/rules.py` | `packaging/linux/`, PNG egérkép, a szabályok a `core/model.py`-ban | Megvalósítás közbeni egyszerűsítés |
+| The program handles the profile button in driver mode | Normal mode stays, the mouse steps through the slots itself | In normal mode the onboard slots work on their own, and slot selection (05/04) became known too |
+| Writing to the live slot for onboard profiles too | Only slot selection for onboard profiles | Capture 2 and the hardware test revealed 05/04; writing to an inactive slot has no visible effect anyway |
+| GUI ↔ service over IPC | No IPC: one process, the config file is the shared interface | Simpler, and the settings window does not touch the device anyway |
+| A shared `[device] dpi_stages` | `dpi_stages` / `dpi_active` per profile | Every slot has its own DPI table |
+| hidapi on Windows | hidapi if installed, otherwise our own `hid.dll` wrapper | Needs no extra package, and can open with zero access rights the collection Windows keeps for itself |
+| RGB entirely out of scope | The dock's factory battery level effect can be switched on and off | User request; the firmware computes the colour |
+| – | Live status and DPI display | User request while trying the Linux port |
+| – | Custom cursor per profile (Linux) | User request (YoloMouse replacement on Linux) |
+| Hungarian interface and documentation | Selectable English or Hungarian interface; English is the primary documentation, with a Hungarian version | User request (2026-11-04) |
+| `packaging/debian/`, SVG mouse picture, `daemon/rules.py` | `packaging/linux/`, PNG mouse picture, the rules in `core/model.py` | Simplification during implementation |
 
-## Nyitott kérdések
+## Open questions
 
-Protokoll:
+Protocol:
 
-- [x] Melyik paranccsal választható ki az aktív beépített hely? `05/04 [hely, 0]`, lekérdezés: `05/84`.
-- [x] Hány beépített hely van? 4 (0x02–0x05), plusz az élő hely (0x01).
-- [x] A gomb ID-lista és a kimenettípusok: a 2. rögzítés megadta (lásd fent).
-- [x] Normal mode-ban működik-e a profilgomb? Igen, az egér maga vált; a jelzést csak driver mode-ban küldi.
-- [x] Linuxon az OpenRazer mellett elérhető-e a hidraw? Igen, de a razermouse driver és a daemon felülírhatja a beállításokat, ezért figyelmeztetünk.
-- [ ] A 02/14, 02/16, 02/17, 05/02, 05/03 és 00/C0 pontos jelentése (a mi írásainkhoz eddig nem kellett).
-- [ ] DPI-fokozat le (valószínűleg `06 02`) és görgetés le (valószínűleg egérgomb 10): nem láttuk, a program nem kínálja.
-- [ ] A többi Razer-billentyűkód (report 4) és a `05 09`, `05 0c` események pontos jelentése.
-- [ ] Töltés közben felülírja-e a dokk firmware-e a beállított effektet?
+- [x] Which command selects the active onboard slot? `05/04 [slot, 0]`, query: `05/84`.
+- [x] How many onboard slots are there? 4 (0x02–0x05), plus the live slot (0x01).
+- [x] The button id list and the output types: given by capture 2 (see above).
+- [x] Does the profile button work in normal mode? Yes, the mouse switches itself; it only sends the signal in driver mode.
+- [x] Is hidraw available on Linux alongside OpenRazer? Yes, but the razermouse driver and the daemon can overwrite the settings, so we warn.
+- [ ] The exact meaning of 02/14, 02/16, 02/17, 05/02, 05/03 and 00/C0 (not needed for our writes so far).
+- [ ] DPI stage down (probably `06 02`) and scroll down (probably mouse button 10): not seen, the program does not offer them.
+- [ ] The exact meaning of the other Razer key codes (report 4) and of the `05 09`, `05 0c` events.
+- [ ] Does the dock's firmware overwrite the configured effect while charging?
 
 Windows:
 
-- [ ] DPI- és akkuesemények olvasása Windowson lekérdezés nélkül (a dokk 1. interfészének input reportjai, pl. átfedéses `ReadFile`-lal), utána hardveres próba és Windows-kiadás. *Döntés (2026-11-04): így marad, a Windows-gépen folytatjuk.*
-- [x] Kell-e egyedi kurzor Windowson? *Döntés (2026-11-04): kell.* Terv: „Tervek jóváhagyásra”.
+- [ ] Reading DPI and battery events on Windows without polling (input reports of the dock's interface 1, e.g. with overlapped `ReadFile`), then a hardware test and a Windows release. *Decision (2026-11-04): stays like this, to be continued on the Windows machine.*
+- [x] Is a custom cursor needed on Windows? *Decision (2026-11-04): yes.* Plan: "Plans for approval".
 
-Működés:
+Operation:
 
-- [x] A profilgombbal választott hely követése. *Kész (2026-11-04), Linuxon:* a `05 39` eseményből tudja meg a szolgáltatás, lásd „A profilgombos váltás követése”. Windowson az eseményolvasóval együtt jön.
-- [ ] Wayland-támogatás: a Mint Cinnamon egyelőre X11, de a kurzorréteg és az ablakfigyelés Waylanden más megoldást kívánna.
-- [ ] A kurzorréteg olyan játéknál, amely saját kurzort rajzol, vagy kizárólagos teljes képernyőt használ (kompozitor nélkül): ott a réteg nem látszik, vagy két kurzor lesz. Kell-e profilonként jelezni vagy tesztelni?
+- [x] Tracking the slot chosen with the profile button. *Done (2026-11-04), on Linux:* the service learns it from the `05 39` event, see "Tracking the profile button". On Windows it comes with the event reader.
+- [ ] Wayland support: Mint Cinnamon is X11 for now, but the cursor layer and window watching would need a different solution on Wayland.
+- [ ] The cursor layer with a game that draws its own cursor or uses exclusive full screen (without a compositor): there the layer does not show, or there will be two cursors. Should this be flagged or tested per profile?
 
-## A profilgombos váltás követése
+## Tracking the profile button
 
-Normal mode-ban az egér maga lépteti a helyeket a profilgombbal, ezért a szolgáltatásnak erről értesülnie kell.
+In normal mode the mouse steps through the slots itself with the profile button, so the service has to learn about it.
 
-- Minden helyváltáskor jön egy `05 39` esemény a dokk 1. interfészén, a gombnyomáskor és a program saját választásakor is. Az esemény nem tartalmazza a helyet.
-- Az eseményre a szolgáltatás egyszer kiolvassa az aktív helyet (`05/84`). Ha ez nem az, amit ő választott, az kézi váltás (`manual_store`). Időzített lekérdezés nincs.
-- A tálcaikon ilyenkor narancssárga, és a szöveg a kézi helyet mutatja: `Profil: arpg (kézi, kék hely)`, vagy `Profil: kézi, kék hely`, ha a hely tartalmát a program nem ismeri (ekkor az ikonon `K` betű van). A DPI-t is újraolvassa, mert minden helynek saját fokozatai vannak.
-- A kézi váltás a következő ablakváltásig érvényes. Akkor újra a szabály dönt, akkor is, ha a profil ugyanaz, mint a gombnyomás előtt. Ilyenkor nem ír, csak kiválasztja a helyet. Ugyanarra az ablakra érkező ismételt jelzés nem számít ablakváltásnak.
-- A driver mode-ot nem használjuk: akkor az egér program nélkül nem váltana helyet.
+- Every slot change produces a `05 39` event on the dock's interface 1, both on a button press and on the program's own selection. The event does not contain the slot.
+- On the event the service reads the active slot once (`05/84`). If it is not the one it selected, it is a manual switch (`manual_store`). There is no timed polling.
+- The tray icon is then orange, and the text shows the manual slot: `Profile: arpg (manual, blue slot)`, or `Profile: manual, blue slot` if the program does not know the slot's contents (the icon then shows the letter `M`, `K` in Hungarian). It also rereads the DPI, because every slot has its own stages.
+- A manual switch holds until the next window change. Then the rule decides again, even if the profile is the same as before the button press. In that case it does not write, it only selects the slot. A repeated signal for the same window does not count as a window change.
+- Driver mode is not used: then the mouse would not switch slots without the program.
 
-## Tervek jóváhagyásra
+## Plans for approval
 
-Kódolás csak jóváhagyás után.
+Coding only after approval.
 
-### Egyedi kurzor Windowson
+### Custom cursor on Windows
 
-**Javaslat: a rendszerkurzor ideiglenes cseréje** (`SetSystemCursor`), réteg nélkül.
+**Proposal: temporarily replacing the system cursor** (`SetSystemCursor`), without a layer.
 
-- Amikor a kurzoros profil ablaka aktív lesz, a program a felhasználó `.cur` fájlját a megadott nagyítással betölti (`CreateIconIndirect`), és lecseréli vele a nyíl kurzort (OCR_NORMAL, igény szerint a kéz- és szöveges kurzort is).
-- Más ablakra váltáskor és kilépéskor visszaállítja a rendszer kurzorait (`SystemParametersInfo(SPI_SETCURSORS)`).
-- Előny: nincs késés, mert maga a Windows rajzolja, és kizárólagos teljes képernyőn is működik, ahol egy rétegablak nem látszana. A játékhoz nem nyúl (nincs DLL-injektálás, mint a YoloMouse-nál), anti-cheat szempontból semleges.
-- Kockázat: ha a program összeomlik, a nagy kurzor a rendszerben marad. Ezért induláskor mindig visszaállítjuk a rendszer kurzorait, és a tálcamenübe kerül egy „Kurzor visszaállítása” pont. Kijelentkezés is visszaállítja.
-- Korlát: ha a játék saját kurzort rajzol vagy saját kurzorképet állít be, a csere nem látszik. Unity-játékoknál (Last Epoch) a rendszer nyilát használják, ott működnie kell. Ezt csak Windows-gépen lehet kipróbálni.
-- A konfig ugyanaz marad (`cursor`, `cursor_scale`), csak a megvalósítás platformfüggő: `platform/win/cursor.py`, ugyanazzal a `show()` / `hide()` felülettel, mint Linuxon.
+- When the window of a profile with a cursor becomes active, the program loads the user's `.cur` file at the given scale (`CreateIconIndirect`) and replaces the arrow cursor with it (OCR_NORMAL, optionally the hand and text cursors too).
+- On switching to another window and on exit it restores the system cursors (`SystemParametersInfo(SPI_SETCURSORS)`).
+- Advantage: no lag, because Windows itself draws it, and it works in exclusive full screen too, where a layer window would not show. It does not touch the game (no DLL injection as with YoloMouse), neutral as far as anti-cheat goes.
+- Risk: if the program crashes, the big cursor stays in the system. So at start we always restore the system cursors, and the tray menu gets a "Restore cursor" item. Logging out restores it too.
+- Limitation: if the game draws its own cursor or sets its own cursor image, the replacement does not show. Unity games (Last Epoch) use the system arrow, so it should work there. This can only be tried on a Windows machine.
+- The config stays the same (`cursor`, `cursor_scale`), only the implementation is platform-specific: `platform/win/cursor.py`, with the same `show()` / `hide()` interface as on Linux.
 
-Alternatíva: egy rétegablak, mint Linuxon (`WS_EX_LAYERED | WS_EX_TRANSPARENT`, nyers egéresemények, a rendszerkurzor elrejtése). Ezt csak akkor javaslom, ha a csere valamelyik játékban nem működik.
+Alternative: a layer window as on Linux (`WS_EX_LAYERED | WS_EX_TRANSPARENT`, raw mouse events, hiding the system cursor). I only propose this if the replacement does not work in some game.
 
-## Mérföldkövek
+## Milestones
 
-1. ✓ **M1 – protokoll-könyvtár:** projektváz, `core/protocol.py`, egységtesztek a `data/session1` alapján.
-2. ✓ **M2 – parancssoros prototípus:** DPI, akku, gombkiosztás az élő helyen; 2. rögzítés.
-3. ✓ **M3 – háttérszolgáltatás:** ablakfigyelő, szabálymotor, tálcaikon, TOML-konfig, Synapse-import, beépített helyek.
-4. ✓ **M4 – grafikus felület és Windows-telepítő:** v0.1.0.
-5. ✓ **L1–L3 – Linux port:** hidraw, OpenRazer-figyelmeztetés, X11 ablakfigyelés, autostart, .deb, élő állapot; v0.2.0.
-6. ✓ **Dokk akkuszint-kapcsoló** (v0.2.1) és **egyedi kurzor** (v0.2.2), csak Linux.
-7. ✓ **A profilgombos váltás követése**, Linuxon.
-8. **Következő – Windows utolérése:** eseményolvasó lekérdezés nélkül (ezzel a profilgomb követése is), egyedi kurzor, a dokk-kapcsoló és az élő állapot kipróbálása Windowson, Windows-kiadás.
+1. ✓ **M1 – protocol library:** project skeleton, `core/protocol.py`, unit tests based on `data/session1`.
+2. ✓ **M2 – command-line prototype:** DPI, battery, button mapping on the live slot; capture 2.
+3. ✓ **M3 – background service:** window watcher, rule engine, tray icon, TOML config, Synapse import, onboard slots.
+4. ✓ **M4 – graphical interface and Windows installer:** v0.1.0.
+5. ✓ **L1–L3 – Linux port:** hidraw, OpenRazer warning, X11 window watching, autostart, .deb, live status; v0.2.0.
+6. ✓ **Dock battery level switch** (v0.2.1) and **custom cursor** (v0.2.2), Linux only.
+7. ✓ **Tracking the profile button**, on Linux.
+8. ✓ **Bilingual interface** (English, Hungarian) and English documentation with a Hungarian version.
+9. **Next – Windows catching up:** event reader without polling (with it, profile button tracking too), custom cursor, trying the dock switch and the live status on Windows, Windows release.

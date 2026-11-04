@@ -1,179 +1,181 @@
-# Razer Basilisk V3 Pro + Mouse Dock Pro – USB protokoll (1. rögzítés)
+# Razer Basilisk V3 Pro + Mouse Dock Pro – USB protocol (capture 1)
 
-Forrás: `captures/session1.pcap` (USBPcap5, 3-as eszköz = Mouse Dock Pro, VID 0x1532, PID 0x00A4), 2026-11-01 14:28–14:31.
-Synapse 4.0.827 írt, az egér vezeték nélkül csatlakozott a dockhoz. A dekódolt listák: `captures/session1_cmds.txt` (kérések), `captures/session1_rsp.txt` (válaszok). A dekóder: `tools/razer_cmds.py`.
-A Hypershift nincs a scope-ban.
+**English** · [Magyar](basilisk-v3-pro-protocol.hu.md)
 
-## Szállítás
+Source: `captures/session1.pcap` (USBPcap5, device 3 = Mouse Dock Pro, VID 0x1532, PID 0x00A4), 2026-11-01 14:28–14:31.
+Synapse 4.0.827 was writing; the mouse was connected wirelessly to the dock. The decoded lists: `captures/session1_cmds.txt` (requests), `captures/session1_rsp.txt` (responses). The decoder: `tools/razer_cmds.py`.
+Hypershift is out of scope.
 
-- HID feature report a dock **0. interfészén** (wIndex 0, report ID 0).
-  - Írás: `SET_REPORT` – bmRequestType 0x21, bRequest 0x09, wValue 0x0300.
-  - Visszaolvasás: `GET_REPORT` – 0xA1 / 0x01 / 0x0300.
-  - Minden írás után a Synapse azonnal visszaolvassa a választ.
-- A riport 90 bájtos, pontosan az openrazer `razer_report` felépítése:
+## Transport
 
-| bájt | mező | megfigyelés |
+- HID feature report on the dock's **interface 0** (wIndex 0, report ID 0).
+  - Write: `SET_REPORT` – bmRequestType 0x21, bRequest 0x09, wValue 0x0300.
+  - Read back: `GET_REPORT` – 0xA1 / 0x01 / 0x0300.
+  - Synapse reads the response back immediately after every write.
+- The report is 90 bytes, exactly openrazer's `razer_report` layout:
+
+| byte | field | observation |
 |---|---|---|
-| 0 | status | kérésben 0x00; válaszban 0x02 = OK, 0x01 = foglalt (újra kell olvasni) |
-| 1 | transaction id | a Synapse körbeforgó számlálót használ (0x00–0x1E), az openrazer fix 0x1F-et; a dock mindkettőt elfogadja |
+| 0 | status | 0x00 in requests; in responses 0x02 = OK, 0x01 = busy (read again) |
+| 1 | transaction id | Synapse uses a rolling counter (0x00–0x1E), openrazer a fixed 0x1F; the dock accepts both |
 | 2–3 | remaining packets | 0x0000 |
 | 4 | protocol type | 0x00 |
-| 5 | data size | az argumentumok hossza |
+| 5 | data size | length of the arguments |
 | 6 | command class | |
-| 7 | command id | a 0x80 bit = lekérdezés (GET) |
-| 8–87 | argumentumok (80 B) | |
-| 88 | CRC | a 2–87. bájtok XOR-ja (mind a 65 kérésnél és válasznál ellenőrizve) |
+| 7 | command id | bit 0x80 = query (GET) |
+| 8–87 | arguments (80 B) | |
+| 88 | CRC | XOR of bytes 2–87 (checked on all 65 requests and responses) |
 | 89 | reserved | 0x00 |
 
-## Tárolóhely (1. argumentum)
+## Storage slot (argument 1)
 
-Sok parancs első argumentuma egy tárolóhely-azonosító:
+The first argument of many commands is a storage slot id:
 
-- `0x01` = az aktív (élő) beállítás. Minden módosítás ide íródik, ez azonnal érvényes.
-- `0x02`–`0x05` = a **4 beépített profilhely** az egér memóriájában (2. rögzítés). A Synapse „On-Board Memory” listájában ezek sorrendben: 1. hely piros = 0x02, 2. zöld = 0x03, 3. kék = 0x04, 4. cián = 0x05. Profilváltáskor a Synapse a profilt a hozzá tartozó helyre **és** a 0x01-re is kiírja.
-- Az openrazer-ben ugyanez a bájt a `VARSTORE` (0x01).
+- `0x01` = the active (live) settings. Every change is written here and takes effect at once.
+- `0x02`–`0x05` = the **4 onboard profile slots** in the mouse's memory (capture 2). In Synapse's "On-Board Memory" list, in order: slot 1 red = 0x02, 2 green = 0x03, 3 blue = 0x04, 4 cyan = 0x05. When switching profiles, Synapse writes the profile to its slot **and** to 0x01.
+- In openrazer the same byte is `VARSTORE` (0x01).
 
-## Azonosított parancsok
+## Identified commands
 
-| class/id | jelentés | argumentumok | openrazer |
+| class/id | meaning | arguments | openrazer |
 |---|---|---|---|
-| 04/06 | DPI stage-ek írása | `store, aktív_stage(1-től), darab, {idx(0-tól), X_hi, X_lo, Y_hi, Y_lo, 0, 0} × darab` | egyezik (`set_dpi_stages`) |
-| 04/86 | DPI stage-ek olvasása | `store` → ugyanaz a felépítés, de a válaszban az idx 1-től indul | egyezik |
-| 02/0C | **gomb kiosztása** | `store, gomb_id, hypershift(0), típus, hossz, adat…` (lásd lent) | **nincs benne** (új) |
-| 02/14, 02/17, 02/16 | profilhelyenként, a gombok írása előtt: `14 [store,0]`, `17 [store, 0/1, 0…]`, `16 [store,0]` | valószínűleg egy blokk (pl. makrótábla) kezdete / törlése / lezárása – **tisztázandó** | nincs |
-| 0F/04 | fényerő | `store, led(0x00), érték` – 0x54 = 84/255 ≈ 33% (a profilban 33) | egyezik (extended matrix) |
-| 0F/84 | fényerő olvasása | | egyezik |
-| 0F/02 | effekt beállítása | `00 00 08 00 00 00` | extended matrix effekt, részletek később |
-| 0F/03 | Chroma egyedi keret (soronként) | folyamatos, a szoftveres effektushoz tartozik – figyelmen kívül hagyható | egyezik |
-| 0F/80 | LED-zónák/effekt olvasása | válasz: `01 19 03 01 01 04 19 03 01 01 0a 19 03 01 0b` | – |
-| 07/80 | akkuszint | válasz `00 ff` = 100% | egyezik |
-| 07/84 | töltés állapota | válasz `00 00` = nem tölt | egyezik |
-| 00/84 | eszközmód olvasása | válasz `03 00` = **driver mode** | egyezik (00/04 = írás) |
-| 00/C0 | profilhely infó (lekérdezés) | `[store,0]` → `[store,08]` a 0x01–0x05 helyekre, 0x06-ra `00` | jelentése nem kell a működéshez |
-| 04/05 | aktuális DPI | `store, X(2), Y(2), 0, 0` – a Synapse a beépített helyre a stage-tábla mellé írja | egyezik (`set_dpi_xy`) |
-| 05/02, 05/03 | profilhely előkészítése (beépített helyre íráskor) | `[store]` | – |
-| 05/08 | a profil neve/azonosítója a beépített helyen | `store, offset(2), 00, FA, 64 bájt adat` – a Synapse GUID-ot, a profil nevét és hash-t ír ide | – (a működéshez nem kell) |
-| 05/04 · 05/84 | aktív hely kiválasztása / lekérdezése | `[store, 0]` – lásd „Az aktív hely” | – |
-| 05/81 | a helyek listája | → `05 01 02 03 04 05` | – |
-| 06/8E | beépített memória kihasználtsága | válasz `00 64 | összes(4) | szabad(4) | 00 01 00`, pl. 0x4C000 / 0x4BC00 = „Available 99.67%” | – |
-| 00/BF | a dockhoz párosított eszköz | válasz `02 01 00 ab 00 ff ff` – benne a 0x00AB (vezeték nélküli Basilisk V3 Pro PID) | – |
+| 04/06 | write DPI stages | `store, active_stage(from 1), count, {idx(from 0), X_hi, X_lo, Y_hi, Y_lo, 0, 0} × count` | same (`set_dpi_stages`) |
+| 04/86 | read DPI stages | `store` → the same layout, but in the response idx starts at 1 | same |
+| 02/0C | **button mapping** | `store, button_id, hypershift(0), type, length, data…` (see below) | **not there** (new) |
+| 02/14, 02/17, 02/16 | per profile slot, before writing the buttons: `14 [store,0]`, `17 [store, 0/1, 0…]`, `16 [store,0]` | probably start / clear / close of a block (e.g. macro table) – **to be clarified** | no |
+| 0F/04 | brightness | `store, led(0x00), value` – 0x54 = 84/255 ≈ 33% (33 in the profile) | same (extended matrix) |
+| 0F/84 | read brightness | | same |
+| 0F/02 | set effect | `00 00 08 00 00 00` | extended matrix effect, details later |
+| 0F/03 | Chroma custom frame (per row) | continuous, belongs to the software effect – can be ignored | same |
+| 0F/80 | read LED zones/effect | response: `01 19 03 01 01 04 19 03 01 01 0a 19 03 01 0b` | – |
+| 07/80 | battery level | response `00 ff` = 100% | same |
+| 07/84 | charging state | response `00 00` = not charging | same |
+| 00/84 | read device mode | response `03 00` = **driver mode** | same (00/04 = write) |
+| 00/C0 | profile slot info (query) | `[store,0]` → `[store,08]` for slots 0x01–0x05, `00` for 0x06 | its meaning is not needed for operation |
+| 04/05 | current DPI | `store, X(2), Y(2), 0, 0` – Synapse writes it to the onboard slot next to the stage table | same (`set_dpi_xy`) |
+| 05/02, 05/03 | prepare profile slot (when writing an onboard slot) | `[store]` | – |
+| 05/08 | the profile's name/id in the onboard slot | `store, offset(2), 00, FA, 64 bytes of data` – Synapse writes a GUID, the profile name and a hash here | – (not needed for operation) |
+| 05/04 · 05/84 | select / query the active slot | `[store, 0]` – see "The active slot" | – |
+| 05/81 | list of slots | → `05 01 02 03 04 05` | – |
+| 06/8E | onboard memory usage | response `00 64 | total(4) | free(4) | 00 01 00`, e.g. 0x4C000 / 0x4BC00 = "Available 99.67%" | – |
+| 00/BF | device paired with the dock | response `02 01 00 ab 00 ff ff` – contains 0x00AB (wireless Basilisk V3 Pro PID) | – |
 
-### Gombkiosztás (02/0C) – részletesen
+### Button mapping (02/0C) in detail
 
-`store, gomb, hypershift, típus, hossz, adat[hossz], 0…` (data size = 10)
+`store, button, hypershift, type, length, data[length], 0…` (data size = 10)
 
-| típus | jelentés | adat |
+| type | meaning | data |
 |---|---|---|
-| 0x01 | egérgomb | `[egérgomb száma]` – pl. `01 05` = Mouse Button 5 (gyári) |
-| 0x02 | billentyű | `[módosító bitmaszk, HID usage]` – a módosító a szokásos HID bitmaszk (0x01 = bal Ctrl) |
-| 0x00 | letiltva | – (hossz 0) |
-| 0x06 | DPI-funkció | `01` = fokozat fel; `06` = fokozatok körbe (a DPI-gomb gyári funkciója); `05 X(2) Y(2)` = érzékenység-clutch az adott DPI-vel (a hüvelykujj-gomb gyári funkciója, 400 DPI) |
-| 0x07 | profilfunkció | `04` = következő profil (a profilgomb gyári funkciója) |
-| 0x0A | multimédia | `[HID consumer usage, 2 bájt BE]`, pl. `00 CD` = lejátszás/szünet |
-| 0x0E | ismétlődő görgetés | `68 00 14` balra, `69 00 14` jobbra – a görgődöntés gyári funkciója |
-| 0x12 | görgő mód váltás | `01` – a görgő mód gomb (0x6A) gyári funkciója (02/8C-vel kiolvasva) |
+| 0x01 | mouse button | `[mouse button number]` – e.g. `01 05` = Mouse Button 5 (factory) |
+| 0x02 | key | `[modifier bitmask, HID usage]` – the modifier is the usual HID bitmask (0x01 = left Ctrl) |
+| 0x00 | disabled | – (length 0) |
+| 0x06 | DPI function | `01` = stage up; `06` = cycle stages (factory function of the DPI button); `05 X(2) Y(2)` = sensitivity clutch at that DPI (factory function of the thumb button, 400 DPI) |
+| 0x07 | profile function | `04` = next profile (factory function of the profile button) |
+| 0x0A | multimedia | `[HID consumer usage, 2 bytes BE]`, e.g. `00 CD` = play/pause |
+| 0x0E | repeated scroll | `68 00 14` left, `69 00 14` right – factory function of the wheel tilt |
+| 0x12 | toggle scroll mode | `01` – factory function of the scroll mode button (0x6A) (read with 02/8C) |
 
-Az egérgomb típusban a 9-es szám a görgetés fel („Scroll Up”).
+In the mouse button type, number 9 is scroll up ("Scroll Up").
 
-Gomb-azonosítók a rögzítésből:
+Button ids from the captures:
 
-| gomb id | gomb | bizonyíték |
+| button id | button | evidence |
 |---|---|---|
-| 0x03 | görgőkattintás | 2. rögzítés, B1 → KEY_1; gyári: egérgomb 3 |
-| 0x04 | Button4 (hátsó oldalgomb) | KEY_R (0x15) a „general” profilban |
-| 0x05 | Button5 (elülső oldalgomb) | **14:30:27 → `01 05 00 02 02 00 25` = KEY_8 (HID 0x25)** |
-| 0x0E | profilváltó gomb (alul) | B6 → KEY_6; gyári: profilfunkció `04` |
-| 0x0F | érzékenység-clutch (hüvelykujj, Synapse: DKM_SB_02) | KEY_E (0x08); a browser profilban Ctrl+W (`01 1a`) |
-| 0x34 | görgő döntése balra | B2 → KEY_2; gyári: `0E 68 00 14` |
-| 0x35 | görgő döntése jobbra | B3 → KEY_3; gyári: `0E 69 00 14` |
-| 0x60 | DPI-fokozat váltó gomb | B5 → KEY_5; gyári: DPI-funkció `06` |
-| 0x6A | görgő mód gomb (racsnis/sima) | B4 → KEY_4; gyári funkciója még nem látszott |
+| 0x03 | wheel click | capture 2, B1 → KEY_1; factory: mouse button 3 |
+| 0x04 | Button4 (back side button) | KEY_R (0x15) in the "general" profile |
+| 0x05 | Button5 (front side button) | **14:30:27 → `01 05 00 02 02 00 25` = KEY_8 (HID 0x25)** |
+| 0x0E | profile button (bottom) | B6 → KEY_6; factory: profile function `04` |
+| 0x0F | sensitivity clutch (thumb, Synapse: DKM_SB_02) | KEY_E (0x08); Ctrl+W (`01 1a`) in the browser profile |
+| 0x34 | wheel tilt left | B2 → KEY_2; factory: `0E 68 00 14` |
+| 0x35 | wheel tilt right | B3 → KEY_3; factory: `0E 69 00 14` |
+| 0x60 | DPI stage button | B5 → KEY_5; factory: DPI function `06` |
+| 0x6A | scroll mode button (tactile/free) | B4 → KEY_4; its factory function was not seen yet |
 
-A bal és a jobb klikk ID-ját szándékosan nem kezeljük: így egy profil sem veheti el az elsődleges gombokat.
+The ids of the left and right click are deliberately not handled, so no profile can take away the primary buttons.
 
-A billentyűkódok szabványos HID Usage ID-k (0x04 = A … 0x1D = Z, 0x1E = 1 … 0x27 = 0).
+The key codes are standard HID Usage IDs (0x04 = A … 0x1D = Z, 0x1E = 1 … 0x27 = 0).
 
-## Az egyes lépések a rögzítésben
+## The steps in the capture
 
-| idő | művelet | parancsok |
+| time | action | commands |
 |---|---|---|
-| 14:28:35 | stage-ek létrehozása (400/1600/1800/3200/6400) | `04/06 01 02 05 …` + `04/86` |
-| 14:28:36 | a 3. stage (1800) lett aktív | `04/06 01 03 05 …` |
-| 14:29:39 | a 2. stage (1600) lett aktív | `04/06 01 02 05 …` – az aktív stage váltása is a teljes táblát írja újra |
-| 14:30:27 | Button5 → KEY_8 | `02/0C 01 05 00 02 02 00 25` – csak az élő (0x01) helyre |
-| 14:31:07 | profilváltás (browser) | gomb visszaállítása, `02/14-17-16`, DPI-tábla, effekt, gombok a 0x05-ös és a 0x01-es helyre (Ctrl+W, Ctrl+T) |
-| 14:31:27.8 | a felhasználó megnyomta az egér alján lévő „Cycle Up Profile” gombot | interrupt IN, EP 0x82: `04 50 00…` (lenyomás), majd 14:31:28.0-kor `04 00…` (felengedés) – report ID 4 = `razerKeyReportID`, Razer-billentyűkód 0x50 |
-| 14:31:28 | a Synapse erre átváltott az „fps1” profilra (E/F/R/G gombok, 0x03-as hely) | ugyanaz a parancssor, mint a kézi váltásnál |
+| 14:28:35 | stages created (400/1600/1800/3200/6400) | `04/06 01 02 05 …` + `04/86` |
+| 14:28:36 | stage 3 (1800) became active | `04/06 01 03 05 …` |
+| 14:29:39 | stage 2 (1600) became active | `04/06 01 02 05 …` – changing the active stage also rewrites the whole table |
+| 14:30:27 | Button5 → KEY_8 | `02/0C 01 05 00 02 02 00 25` – only to the live (0x01) slot |
+| 14:31:07 | profile switch (browser) | button reset, `02/14-17-16`, DPI table, effect, buttons to slots 0x05 and 0x01 (Ctrl+W, Ctrl+T) |
+| 14:31:27.8 | the user pressed the "Cycle Up Profile" button on the bottom of the mouse | interrupt IN, EP 0x82: `04 50 00…` (press), then at 14:31:28.0 `04 00…` (release) – report ID 4 = `razerKeyReportID`, Razer key code 0x50 |
+| 14:31:28 | Synapse then switched to the "fps1" profile (E/F/R/G buttons, slot 0x03) | the same command sequence as a manual switch |
 
-**Fontos:** a profilváltó gomb esetében nem az egér vált profilt. Az egér csak egy Razer-billentyű eseményt küld (report 4, kód 0x50), a váltást a Synapse végzi el a host oldalon, a profil kiírásával. Ugyanígy működik a többi `razerKey` típusú bemenet is (a `main.json` gyári kiosztásaiban pl. key 84 = 0x54). A saját programunknak tehát az EP 0x82-n figyelnie kell ezeket az eseményeket.
+**Important:** with the profile button it is not the mouse that switches profiles. The mouse only sends a Razer key event (report 4, code 0x50); Synapse does the switch on the host side by writing the profile. The other `razerKey` type inputs work the same way (in the factory mappings of `main.json`, e.g. key 84 = 0x54). Our own program therefore has to listen for these events on EP 0x82.
 
-Az 1a lépés (a 3. stage értékének átírása 1600-ra) nem történt meg, ezért a stage-érték átírását külön nem láttuk. Ugyanakkor minden stage-módosítás a teljes `04/06` táblát küldi, tehát a formátum ismert.
+Step 1a (changing the value of stage 3 to 1600) did not happen, so changing a stage value was not seen separately. However, every stage change sends the whole `04/06` table, so the format is known.
 
-## 2. rögzítés (2026-11-01 19:28–19:37, USBPcap2, 7-es eszköz)
+## Capture 2 (2026-11-01 19:28–19:37, USBPcap2, device 7)
 
-Nyers rögzítés: csak helyben (`captures/`). Dekódolva: `data/session2/`.
+Raw capture: local only (`captures/`). Decoded: `data/session2/`.
 
-| idő | lépés | megfigyelés |
+| time | step | observation |
 |---|---|---|
-| 19:29:30 | „Teszt” profil létrehozása | írás az élő helyre (0x01) |
-| 19:30:10 | A1: „Teszt” a beépített 2. (zöld) helyre | `05/03`, `02/14`, `00/C0`, `02/17`, `06/8E`, `05/02`, 4× `05/08` (név, GUID, hash), `04/05`, `04/06`, `0F/04`, `06/8E` – mind a **0x03** helyre |
-| 19:31:01 | A4: profilgomb (1.) | EP 0x82: `04 50` → a Synapse a 0x04 (kék, ARPG 1) hely tartalmát írja a 0x04-re és a 0x01-re |
-| 19:31:19 | A4: profilgomb (2.) | ugyanígy a 0x05 (cián, Browser) |
-| 19:32:45–19:33:35 | B1–B6: gomb ID-k | lásd a gombtáblát (a Synapse minden kiosztott gombot újraír a 0x03 és a 0x01 helyre) |
-| 19:34:30–19:36:53 | C1–C6: kimenettípusok (a hüvelykujj-gombon) | egérgomb 4, multimédia `00CD`, DPI fokozat fel, görgetés fel (egérgomb 9), letiltva, vissza a clutch-ra |
+| 19:29:30 | "Teszt" profile created | write to the live slot (0x01) |
+| 19:30:10 | A1: "Teszt" to onboard slot 2 (green) | `05/03`, `02/14`, `00/C0`, `02/17`, `06/8E`, `05/02`, 4× `05/08` (name, GUID, hash), `04/05`, `04/06`, `0F/04`, `06/8E` – all to slot **0x03** |
+| 19:31:01 | A4: profile button (1st) | EP 0x82: `04 50` → Synapse writes the contents of slot 0x04 (blue, ARPG 1) to 0x04 and 0x01 |
+| 19:31:19 | A4: profile button (2nd) | the same with 0x05 (cyan, Browser) |
+| 19:32:45–19:33:35 | B1–B6: button ids | see the button table (Synapse rewrites every mapped button to slots 0x03 and 0x01) |
+| 19:34:30–19:36:53 | C1–C6: output types (on the thumb button) | mouse button 4, multimedia `00CD`, DPI stage up, scroll up (mouse button 9), disabled, back to clutch |
 
-**Az aktív hely (hardveres próba, 19:00, Synapse nélkül, normal mode):**
+**The active slot (hardware test, 19:00, without Synapse, normal mode):**
 
-- Az egér egyszerre pontosan egy helyet használ: az élő helyet (0x01, a LED **fehér**) vagy egy beépítettet (0x02 piros, 0x03 zöld, 0x04 kék, 0x05 cián). A profilgomb ezeken lépked körbe: fehér → piros → zöld → kék → cián → fehér.
-- A **nem aktív** helyre írás nem látszik. Ha pl. a cián hely aktív, az élő helyre (0x01) írt kiosztást az egér figyelmen kívül hagyja. A korábbi (M3) próba csak azért működött, mert akkor épp a fehér hely volt aktív.
-- `05/84` → `[store]` az aktív hely; a profilgomb megnyomása után 05 → 01 lett.
-- `05/04 [store, 0]` kiválasztja az aktív helyet. Kipróbálva: 05 → cián LED, a gomb a cián hely kiosztását küldte; 01 → fehér LED, az élő hely kiosztása.
-- `05/81` → `05 01 02 03 04 05` (a helyek száma és listája). A `05/80` és a `05/8A` válasza `05`; a jelentésük nem kell.
-- Driver mode-ban (Synapse) az egér csak a profilgomb eseményét küldi, és a Synapse másolja a következő hely tartalmát az élő helyre.
+- The mouse uses exactly one slot at a time: the live slot (0x01, the LED is **white**) or an onboard one (0x02 red, 0x03 green, 0x04 blue, 0x05 cyan). The profile button steps through them in a loop: white → red → green → blue → cyan → white.
+- Writing to a slot that is **not active** has no visible effect. If, say, the cyan slot is active, the mouse ignores a mapping written to the live slot (0x01). The earlier (M3) test only worked because the white slot happened to be active.
+- `05/84` → `[store]` the active slot; after pressing the profile button it went from 05 to 01.
+- `05/04 [store, 0]` selects the active slot. Tried: 05 → cyan LED, the button sent the cyan slot's mapping; 01 → white LED, the live slot's mapping.
+- `05/81` → `05 01 02 03 04 05` (the number and list of slots). `05/80` and `05/8A` respond with `05`; their meaning is not needed.
+- In driver mode (Synapse) the mouse only sends the profile button event, and Synapse copies the next slot's contents to the live slot.
 
-**A mi programunk ezért:**
-- A beépített helyhez rendelt profilokat beírja a 0x02–0x05 helyekre, de csak változáskor.
-- Ablakváltáskor, ha a profil beépített helyen van, csak kiválasztja azt a helyet (05/04).
-- Ha a profil nincs beépített helyen, kiírja az élő helyre, és a fehér helyet teszi aktívvá.
-- A profilgombos kézi váltás a következő ablakváltásig érvényes. A `05 39` eseményre egyszer kiolvassa az aktív helyet (`05/84`), így tudja, hogy kézi váltás történt; a következő ablakváltáskor a szabály szerinti helyet választja, akkor is, ha a profil ugyanaz, mint a nyomás előtt.
-- Kilépéskor visszaállítja azt a helyet, ami induláskor aktív volt, és normal mode-ot hagy.
+**So our program:**
+- Writes the profiles assigned to onboard slots to slots 0x02–0x05, but only when they change.
+- On a window change, if the profile is in an onboard slot, only selects that slot (05/04).
+- If the profile is not in an onboard slot, writes it to the live slot and makes the white slot active.
+- A manual switch with the profile button holds until the next window change. On the `05 39` event it reads the active slot once (`05/84`), so it knows a manual switch happened; on the next window change it selects the slot the rules choose, even if the profile is the same as before the press.
+- On exit it restores the slot that was active at start and leaves normal mode.
 
-## Események a dock 1. interfészén (Linux, hidraw, 2026-11-03)
+## Events on the dock's interface 1 (Linux, hidraw, 2026-11-03)
 
-Normal mode-ban, Synapse nélkül figyelve. A dock 1. interfésze (Linuxon `/dev/hidraw3`) report ID 5-tel jelez. A kernel minden hidraw-olvasónak saját másolatot ad, így a figyelés nem veszi el a bemenetet az asztaltól.
+Watched in normal mode, without Synapse. The dock's interface 1 (`/dev/hidraw3` on Linux) reports with report ID 5. The kernel gives every hidraw reader its own copy, so watching does not take the input away from the desktop.
 
-| Report | Jelentés | Példa |
+| Report | Meaning | Example |
 | --- | --- | --- |
-| `05 02 XX XX YY YY` | DPI megváltozott (X/Y big-endian), minden DPI-gombnyomásra | `05 02 0c 80 0c 80` = 3200 |
-| `05 31 LL …` | akku szintje, 0–255 | `05 31 cd` ≈ 80% |
-| `05 09 SS 01` | kapcsolat / ébredés állapota | `05 09 02 01`, `05 09 03 01` |
-| `05 39 00 …` | az aktív hely megváltozott; az új helyet nem tartalmazza, a `05/84` adja meg | `05 39 00 00 …` |
-| `05 0c …` | ismeretlen, ébredéskor | |
+| `05 02 XX XX YY YY` | DPI changed (X/Y big-endian), on every DPI button press | `05 02 0c 80 0c 80` = 3200 |
+| `05 31 LL …` | battery level, 0–255 | `05 31 cd` ≈ 80% |
+| `05 09 SS 01` | connection / wake state | `05 09 02 01`, `05 09 03 01` |
+| `05 39 00 …` | the active slot changed; it does not contain the new slot, `05/84` gives it | `05 39 00 00 …` |
+| `05 0c …` | unknown, on wake | |
 
-**Helyváltás (próba, 2026-11-04, normal mode):** a profilgomb minden nyomására ez a sorrend jön: `/dev/hidraw4`-en két csupa nulla report, `/dev/hidraw3`-on egy csupa nulla `04 00 …`, majd kb. 0,2 mp-cel később `05 39 00 …`. A `05/84` már a `05 39` előtt is az új helyet adja. Ugyanez a sorozat jön akkor is, ha a host választ helyet (`05/04`), ezért az esemény után össze kell hasonlítani az olvasott helyet a várttal. Hat nyomásnál a sorrend 01 → 02 → 03 → 04 → 05 → 01 → 02 volt.
+**Slot change (test, 2026-11-04, normal mode):** every press of the profile button gives this sequence: two all-zero reports on `/dev/hidraw4`, an all-zero `04 00 …` on `/dev/hidraw3`, then about 0.2 s later `05 39 00 …`. `05/84` already gives the new slot before the `05 39`. The same sequence comes when the host selects a slot (`05/04`), so after the event the slot read has to be compared with the expected one. Over six presses the order was 01 → 02 → 03 → 04 → 05 → 01 → 02.
 
-Kiegészítő lekérdezések: a `04/85` (arg.: hely) az aktuális DPI-t adja (`hely, X(2), Y(2)`), a `04/86` 1. bájtja az aktív fokozat sorszáma (1-től). Alvó egérnél a dock `FAILURE` vagy időtúllépés választ ad, amíg az egér meg nem mozdul.
+Additional queries: `04/85` (arg.: slot) gives the current DPI (`slot, X(2), Y(2)`), byte 1 of `04/86` is the number of the active stage (from 1). While the mouse sleeps the dock answers with `FAILURE` or times out until the mouse is moved.
 
-## Következmények a tervezéshez
+## Consequences for the design
 
-1. Az alap protokoll (keret, CRC, DPI, fényerő, akku, eszközmód) megegyezik az openrazer-rel, így Linuxon a kód közvetlenül hidraw-on keresztül írható.
-2. A gombkiosztás (02/0C) új, de egyszerű, és a **hardver** végzi: a billentyűt az egér/dock maga küldi a billentyűzet-interfészen. Ezért nincs szükség szoftveres injektálásra (uinput / SendInput) az egyszerű billentyű-kiosztásokhoz.
-3. Az alkalmazásfüggő automatikus váltáshoz elég a 0x01-es (élő) helyre írni: egy teljes profil (DPI-tábla + kb. 10 gomb) kb. 15 riport, ez ~1 mp. Opcionálisan használhatók a beépített helyek is.
-4. Az egér driver mode-ban (`00/84 → 03`) van, amíg a Synapse fut. Saját eszközünkkel meg kell vizsgálni, hogy normal mode-ban is megmaradnak-e a kiosztások.
+1. The basic protocol (frame, CRC, DPI, brightness, battery, device mode) is the same as openrazer's, so on Linux the code can write directly through hidraw.
+2. Button mapping (02/0C) is new but simple, and the **hardware** does it: the mouse/dock sends the key itself on the keyboard interface. So simple key mappings need no software injection (uinput / SendInput).
+3. For application-dependent automatic switching it is enough to write the live slot (0x01): a whole profile (DPI table + about 10 buttons) is about 15 reports, ~1 s. The onboard slots can optionally be used too.
+4. The mouse is in driver mode (`00/84 → 03`) while Synapse runs. With our own tool we have to check whether the mappings also stay in normal mode.
 
-## Nyitott kérdések
+## Open questions
 
-- 02/14–17–16 pontos jelentése (valószínűleg a makró-/Hypershift-tábla kezelése; a mi írásainkhoz eddig nem kellett).
-- ~~A görgő mód gomb (0x6A) gyári funkciója~~: típus 0x12, adat `01` (kiolvasva).
-- A DPI fokozat le (valószínűleg `06 02`) és a görgetés le (valószínűleg egérgomb 10): nem láttuk, ezért a program még nem kínálja.
-- A többi Razer-billentyűkód (report 4) és a report 5 (`hardwareEventReportID`, pl. `05 31 fa 00 00 01`) tartalma.
-- ~~A gomb-ID-k teljes listája~~, ~~egyéb kimenettípusok~~, ~~hány beépített hely van~~: a 2. rögzítés megválaszolta.
-- ~~Driver mode nélkül (normal mode) a profilgomb vajon a beépített helyek között vált-e magától?~~ **Igen**: a felhasználó szerint Linuxon, Synapse nélkül az egér gombjával lehet profilt váltani. A beépített profilhelyek tehát önállóan is működnek; a driver mode csak átirányítja a gombot a hosthoz.
-- ~~Hogyan lehet parancsból kiválasztani az aktív beépített profilhelyet?~~ `05/04 [hely, 0]` (lásd „Az aktív hely”). ~~Hány hely van?~~ 4 + az élő hely. Nyitott még: tárol-e a hely nevet (a Synapse a 05/08-cal ír ide), és ezt kell-e nekünk is írni.
+- The exact meaning of 02/14–17–16 (probably handling of the macro/Hypershift table; not needed for our writes so far).
+- ~~Factory function of the scroll mode button (0x6A)~~: type 0x12, data `01` (read back).
+- DPI stage down (probably `06 02`) and scroll down (probably mouse button 10): not seen, so the program does not offer them yet.
+- The other Razer key codes (report 4) and the contents of report 5 (`hardwareEventReportID`, e.g. `05 31 fa 00 00 01`).
+- ~~The full list of button ids~~, ~~other output types~~, ~~how many onboard slots there are~~: answered by capture 2.
+- ~~Without driver mode (normal mode), does the profile button switch between the onboard slots by itself?~~ **Yes**: according to the user, on Linux without Synapse the mouse's button switches profiles. So the onboard profile slots work on their own; driver mode only redirects the button to the host.
+- ~~How can the active onboard profile slot be selected by command?~~ `05/04 [slot, 0]` (see "The active slot"). ~~How many slots are there?~~ 4 + the live slot. Still open: does a slot store a name (Synapse writes here with 05/08), and do we need to write it too.
 
-## A dokk saját világítása (Linux, 2026-11-03)
+## The dock's own lighting (Linux, 2026-11-03)
 
-- A dokk a **0xFF** transaction id-vel küldött parancsokra maga válaszol; 0x1F-fel a parancs az egérhez megy (LED-zónák 0x01/0x04/0x0A). A 0x3F és 0x9F időtúllépést ad.
-- A dokk egyetlen LED-zónája a **0x0F** (`0F/80` válasza: `0f 19 03 01 01`), fényereje `0F/84 [hely, 0f]` = 0xFF.
-- `0F/82 [hely, 0f]` az effektet adja: az 1-es hely a tartós beállítás (Synapse „akkuszint”: `01 0f 0d 01`, azaz **0x0D** effekt), a 0-s hely az éppen látható szín (statikus: `00 0f 01 00 00 01 R G B`; 80%-os akkunál `70 ff 00`).
-- `0F/02` ugyanilyen formában ír. A 0-s helyre írt statikus szín azonnal látszik; a 0x0D effekt a következő akkujelzésnél (pl. amikor az egér felébred) felülírja a saját színével.
+- The dock itself answers commands sent with transaction id **0xFF**; with 0x1F the command goes to the mouse (LED zones 0x01/0x04/0x0A). 0x3F and 0x9F time out.
+- The dock's only LED zone is **0x0F** (`0F/80` response: `0f 19 03 01 01`), its brightness `0F/84 [slot, 0f]` = 0xFF.
+- `0F/82 [slot, 0f]` gives the effect: slot 1 is the persistent setting (Synapse "battery level": `01 0f 0d 01`, i.e. effect **0x0D**), slot 0 is the colour shown right now (static: `00 0f 01 00 00 01 R G B`; `70 ff 00` at 80% battery).
+- `0F/02` writes in the same form. A static colour written to slot 0 shows at once; effect 0x0D overwrites it with its own colour at the next battery report (e.g. when the mouse wakes up).
