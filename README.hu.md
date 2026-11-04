@@ -8,7 +8,7 @@ Nyílt forráskódú profilkezelő a **Razer Basilisk V3 Pro** egérhez (Mouse D
 - profilok tárolása az egér beépített profilhelyein,
 - automatikus profilváltás az aktív (előtérben lévő) ablak alapján.
 
-> **Állapot:** v0.2.2. Linuxon (.deb) működik: profilváltás ablak szerint, beépített helyek, élő állapot, dokk akkuszint-effekt, egyedi kurzor. Windowsra az utolsó kiadás a v0.1.0; az újabb funkciók Windowson még kipróbálásra várnak.
+> **Állapot:** v0.2.3. Linuxon (.deb) működik: profilváltás ablak szerint, beépített helyek, élő állapot, a profilgombos váltás követése, dokk akkuszint-effekt, egyedi kurzor, magyar és angol felület. Windowsra az utolsó kiadás a v0.1.0; az újabb funkciók Windowson még kipróbálásra várnak.
 
 ## Tartalom
 
