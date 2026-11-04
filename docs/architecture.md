@@ -2,7 +2,7 @@
 
 **English** · [Magyar](architecture.hu.md)
 
-Status: approved (2026-11-01), updated to the state of v0.2.2 (2026-11-04). This document is the basis of the implementation; whatever differs from the approved plan is listed under "Changes from the approved plan".
+Status: approved (2026-11-01), updated to the state of v0.2.3 (2026-11-04). This document is the basis of the implementation; whatever differs from the approved plan is listed under "Changes from the approved plan".
 
 A lightweight, open-source profile manager for Windows and Linux Mint (Cinnamon, X11). Without Synapse, it manages the Basilisk V3 Pro's button mapping, DPI and profiles, and switches profiles based on the active window. On Linux it can also show a big custom cursor per profile (e.g. for ARPG games), and it manages the Mouse Dock Pro's battery level lighting.
 
@@ -14,6 +14,7 @@ A lightweight, open-source profile manager for Windows and Linux Mint (Cinnamon,
 | v0.2.0 | Linux only (.deb) | Linux port (hidraw, X11 window watching, autostart, udev in the package), live status: profile letter on the tray icon, DPI/stage/battery in the tooltip, own DPI display |
 | v0.2.1 | Linux only (.deb) | Tray menu switch for the dock's factory battery level effect |
 | v0.2.2 | Linux only (.deb) | Custom cursor per profile (YoloMouse-style big cursor), tried in Last Epoch |
+| v0.2.3 | Linux only (.deb) | English and Hungarian interface (Language submenu in the tray), profile button tracking |
 
 The Windows installer has not been part of the releases since v0.2.0: the live status on Windows (DPI display) is not solved yet without polling, and it has not been tried on a real Windows machine. CI still builds the installer on pull requests.
 

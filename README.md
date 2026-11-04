@@ -8,7 +8,7 @@ Open-source profile manager for the **Razer Basilisk V3 Pro** mouse (also throug
 - stores profiles in the mouse's onboard profile slots,
 - switches profiles automatically based on the active (foreground) window.
 
-> **Status:** v0.2.2. Works on Linux (.deb): per-window profile switching, onboard slots, live status, dock battery effect, custom cursor. The last Windows release is v0.1.0; the newer features have not been tried on Windows yet.
+> **Status:** v0.2.3. Works on Linux (.deb): per-window profile switching, onboard slots, live status, dock battery effect, custom cursor, profile button tracking, English and Hungarian interface. The last Windows release is v0.1.0; the newer features have not been tried on Windows yet.
 
 ## Contents
 

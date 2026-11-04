@@ -2,7 +2,7 @@
 
 [English](architecture.md) · **Magyar**
 
-Állapot: jóváhagyva (2026-11-01), a v0.2.2 állapotára frissítve (2026-11-04). Ez a dokumentum a megvalósítás alapja; ami a jóváhagyott tervtől eltér, azt a „Változások a jóváhagyott tervhez képest” rész sorolja fel.
+Állapot: jóváhagyva (2026-11-01), a v0.2.3 állapotára frissítve (2026-11-04). Ez a dokumentum a megvalósítás alapja; ami a jóváhagyott tervtől eltér, azt a „Változások a jóváhagyott tervhez képest” rész sorolja fel.
 
 Egy könnyű, nyílt forráskódú profilkezelő Windowsra és Linux Mintre (Cinnamon, X11). A Synapse nélkül kezeli a Basilisk V3 Pro gombkiosztását, DPI-jét és profiljait, és az aktív ablak alapján vált profilt. Linuxon ezen felül profilonként egyedi, nagy kurzort mutathat (pl. ARPG játékokhoz), és kezeli a Mouse Dock Pro akkuszint-világítását.
 
@@ -14,6 +14,7 @@ Egy könnyű, nyílt forráskódú profilkezelő Windowsra és Linux Mintre (Cin
 | v0.2.0 | csak Linux (.deb) | Linux port (hidraw, X11 ablakfigyelés, autostart, udev a csomagban), élő állapot: profilbetű a tálcaikonon, DPI/fokozat/akku a tooltipben, saját DPI-kijelző |
 | v0.2.1 | csak Linux (.deb) | Tálcamenü-kapcsoló a dokk gyári akkuszint-effektjéhez |
 | v0.2.2 | csak Linux (.deb) | Egyedi kurzor profilonként (YoloMouse-szerű nagy kurzor), Last Epoch alatt kipróbálva |
+| v0.2.3 | csak Linux (.deb) | Angol és magyar felület (Nyelv almenü a tálcán), a profilgomb követése |
 
 A Windows-telepítő a v0.2.0 óta nem része a kiadásoknak: a Windows-os élő állapot (DPI-jelzés) még nincs megoldva lekérdezés nélkül, és valódi Windows-gépen sincs kipróbálva. A CI a telepítőt pull requesteken továbbra is megépíti.
 
