@@ -49,6 +49,25 @@ def test_main_window_edits_and_saves(app, tmp_path):
     window.close()
 
 
+def test_tray_shows_manual_slot(tmp_path):
+    pytest.importorskip('PySide6')
+    from basilisk_profiler.core.model import Profile
+    from basilisk_profiler.daemon.tray import profile_display
+
+    class S:
+        active = Profile('general')
+        manual_store = None
+        manual_profile = None
+
+    assert profile_display(S()) == ('Profil: general', 'G')
+    S.manual_store = 0x04
+    assert profile_display(S()) == ('Profil: kézi, kék hely', 'K')
+    S.manual_profile = Profile('arpg')
+    assert profile_display(S()) == ('Profil: arpg (kézi, kék hely)', 'A')
+    S.active = S.manual_store = S.manual_profile = None
+    assert profile_display(S()) == ('Profil: -', '')
+
+
 def test_tray_profile_letter_and_status_lines(tmp_path):
     from basilisk_profiler.daemon.service import LiveStatus
     from basilisk_profiler.daemon.tray import profile_letter, status_lines

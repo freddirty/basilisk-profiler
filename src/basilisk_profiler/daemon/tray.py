@@ -18,7 +18,8 @@ from .service import Service
 TICK_MS = 100
 
 
-COLORS = {'ok': '#44d62c', 'paused': '#9a9a9a', 'error': '#e04040'}
+COLORS = {'ok': '#44d62c', 'manual': '#f0a020', 'paused': '#9a9a9a', 'error': '#e04040'}
+SLOT_NAMES = {0x01: 'fehér', 0x02: 'piros', 0x03: 'zöld', 0x04: 'kék', 0x05: 'cián'}
 
 
 def profile_letter(name: str | None) -> str:
@@ -45,6 +46,19 @@ def _icon(color: str, letter: str = '') -> QIcon:
         painter.drawRoundedRect(14, 4, 36, 56, 18, 18)
     painter.end()
     return QIcon(pixmap)
+
+
+def profile_display(service: Service) -> tuple[str, str]:
+    """The status text and the icon letter for what the mouse is using now."""
+    store = service.manual_store
+    if store is None:
+        name = service.active.name if service.active else None
+        return f'Profil: {name or "-"}', profile_letter(name)
+    slot = f'{SLOT_NAMES.get(store, f"0x{store:02x}")} hely'
+    profile = service.manual_profile
+    if profile is None:
+        return f'Profil: kézi, {slot}', 'K'
+    return f'Profil: {profile.name} (kézi, {slot})', profile_letter(profile.name)
 
 
 def status_lines(service: Service) -> list[str]:
@@ -196,15 +210,14 @@ class Tray:
 
     def refresh(self) -> None:
         s = self.service
-        profile = s.active.name if s.active else '-'
-        text = f'Profil: {profile}'
+        text, letter = profile_display(s)
         if s.config_error:
             text += ' (konfighiba)'
             state = 'error'
         else:
-            state = 'paused' if s.paused else 'ok'
+            state = 'paused' if s.paused else 'manual' if s.manual_store else 'ok'
         self.status.setText(text)
-        key = (state, profile_letter(s.active.name if s.active else None))
+        key = (state, letter)
         if key != self._icon_key:
             self._icon_key = key
             self.tray.setIcon(_icon(COLORS[state], key[1]))

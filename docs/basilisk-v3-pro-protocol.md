@@ -135,7 +135,7 @@ Nyers rögzítés: csak helyben (`captures/`). Dekódolva: `data/session2/`.
 - A beépített helyhez rendelt profilokat beírja a 0x02–0x05 helyekre, de csak változáskor.
 - Ablakváltáskor, ha a profil beépített helyen van, csak kiválasztja azt a helyet (05/04).
 - Ha a profil nincs beépített helyen, kiírja az élő helyre, és a fehér helyet teszi aktívvá.
-- A profilgombos kézi váltás a következő ablakváltásig érvényes.
+- A profilgombos kézi váltás a következő ablakváltásig érvényes. A `05 39` eseményre egyszer kiolvassa az aktív helyet (`05/84`), így tudja, hogy kézi váltás történt; a következő ablakváltáskor a szabály szerinti helyet választja, akkor is, ha a profil ugyanaz, mint a nyomás előtt.
 - Kilépéskor visszaállítja azt a helyet, ami induláskor aktív volt, és normal mode-ot hagy.
 
 ## Események a dock 1. interfészén (Linux, hidraw, 2026-11-03)
@@ -147,7 +147,10 @@ Normal mode-ban, Synapse nélkül figyelve. A dock 1. interfésze (Linuxon `/dev
 | `05 02 XX XX YY YY` | DPI megváltozott (X/Y big-endian), minden DPI-gombnyomásra | `05 02 0c 80 0c 80` = 3200 |
 | `05 31 LL …` | akku szintje, 0–255 | `05 31 cd` ≈ 80% |
 | `05 09 SS 01` | kapcsolat / ébredés állapota | `05 09 02 01`, `05 09 03 01` |
+| `05 39 00 …` | az aktív hely megváltozott; az új helyet nem tartalmazza, a `05/84` adja meg | `05 39 00 00 …` |
 | `05 0c …` | ismeretlen, ébredéskor | |
+
+**Helyváltás (próba, 2026-11-04, normal mode):** a profilgomb minden nyomására ez a sorrend jön: `/dev/hidraw4`-en két csupa nulla report, `/dev/hidraw3`-on egy csupa nulla `04 00 …`, majd kb. 0,2 mp-cel később `05 39 00 …`. A `05/84` már a `05 39` előtt is az új helyet adja. Ugyanez a sorozat jön akkor is, ha a host választ helyet (`05/04`), ezért az esemény után össze kell hasonlítani az olvasott helyet a várttal. Hat nyomásnál a sorrend 01 → 02 → 03 → 04 → 05 → 01 → 02 volt.
 
 Kiegészítő lekérdezések: a `04/85` (arg.: hely) az aktuális DPI-t adja (`hely, X(2), Y(2)`), a `04/86` 1. bájtja az aktív fokozat sorszáma (1-től). Alvó egérnél a dock `FAILURE` vagy időtúllépés választ ad, amíg az egér meg nem mozdul.
 

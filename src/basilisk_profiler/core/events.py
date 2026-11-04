@@ -5,6 +5,7 @@ Seen on the Mouse Dock Pro (2026-11-03, see docs/basilisk-v3-pro-protocol.md):
   05 02 XX XX YY YY   DPI changed (big-endian X / Y), sent on every DPI button press
   05 31 LL ...        battery level, 0-255
   05 09 SS 01         connection / wake state
+  05 39 00 ...        active slot changed (2026-11-04); read 05/84 for the new one
 """
 from __future__ import annotations
 
@@ -25,7 +26,12 @@ class BatteryLevel:
     percent: int
 
 
-DeviceEvent = DpiChanged | BatteryLevel
+@dataclass(frozen=True)
+class SlotChanged:
+    """The active slot changed: profile button or host. The report does not say which slot."""
+
+
+DeviceEvent = DpiChanged | BatteryLevel | SlotChanged
 
 
 def parse_event(data: bytes) -> DeviceEvent | None:
@@ -38,4 +44,6 @@ def parse_event(data: bytes) -> DeviceEvent | None:
         return DpiChanged(x, y) if x else None
     if kind == 0x31:
         return BatteryLevel(round(data[2] * 100 / 255))
+    if kind == 0x39:
+        return SlotChanged()
     return None

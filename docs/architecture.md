@@ -245,33 +245,29 @@ Protokoll:
 Windows:
 
 - [ ] DPI- és akkuesemények olvasása Windowson lekérdezés nélkül (a dokk 1. interfészének input reportjai, pl. átfedéses `ReadFile`-lal), utána hardveres próba és Windows-kiadás. *Döntés (2026-11-04): így marad, a Windows-gépen folytatjuk.*
-- [x] Kell-e egyedi kurzor Windowson? *Döntés (2026-11-04): kell.* Terv: „Tervek jóváhagyásra” / B.
+- [x] Kell-e egyedi kurzor Windowson? *Döntés (2026-11-04): kell.* Terv: „Tervek jóváhagyásra”.
 
 Működés:
 
-- [x] A profilgombbal választott helyet a szolgáltatás nem követi (ha utána ugyanolyan profilú ablakra váltasz, nem választja vissza). *Döntés (2026-11-04): kezelni kell.* Terv: „Tervek jóváhagyásra” / A.
+- [x] A profilgombbal választott hely követése. *Kész (2026-11-04), Linuxon:* a `05 39` eseményből tudja meg a szolgáltatás, lásd „A profilgombos váltás követése”. Windowson az eseményolvasóval együtt jön.
 - [ ] Wayland-támogatás: a Mint Cinnamon egyelőre X11, de a kurzorréteg és az ablakfigyelés Waylanden más megoldást kívánna.
 - [ ] A kurzorréteg olyan játéknál, amely saját kurzort rajzol, vagy kizárólagos teljes képernyőt használ (kompozitor nélkül): ott a réteg nem látszik, vagy két kurzor lesz. Kell-e profilonként jelezni vagy tesztelni?
+
+## A profilgombos váltás követése
+
+Normal mode-ban az egér maga lépteti a helyeket a profilgombbal, ezért a szolgáltatásnak erről értesülnie kell.
+
+- Minden helyváltáskor jön egy `05 39` esemény a dokk 1. interfészén, a gombnyomáskor és a program saját választásakor is. Az esemény nem tartalmazza a helyet.
+- Az eseményre a szolgáltatás egyszer kiolvassa az aktív helyet (`05/84`). Ha ez nem az, amit ő választott, az kézi váltás (`manual_store`). Időzített lekérdezés nincs.
+- A tálcaikon ilyenkor narancssárga, és a szöveg a kézi helyet mutatja: `Profil: arpg (kézi, kék hely)`, vagy `Profil: kézi, kék hely`, ha a hely tartalmát a program nem ismeri (ekkor az ikonon `K` betű van). A DPI-t is újraolvassa, mert minden helynek saját fokozatai vannak.
+- A kézi váltás a következő ablakváltásig érvényes. Akkor újra a szabály dönt, akkor is, ha a profil ugyanaz, mint a gombnyomás előtt. Ilyenkor nem ír, csak kiválasztja a helyet. Ugyanarra az ablakra érkező ismételt jelzés nem számít ablakváltásnak.
+- A driver mode-ot nem használjuk: akkor az egér program nélkül nem váltana helyet.
 
 ## Tervek jóváhagyásra
 
 Kódolás csak jóváhagyás után.
 
-### A) A profilgombos váltás követése
-
-**Ma:** a szolgáltatás azt hiszi, hogy az az aktív hely, amit utoljára ő választott. A profilgomb után ez nem igaz, ezért egy azonos profilú ablakra váltva nem választ vissza, és a tálcaikon is a régi profilt mutatja.
-
-**Javaslat, két lépésben:**
-
-1. **Próba (Linux, mentéssel, ~2 perc):** normal mode-ban figyeljük a dokk 1. interfészét, miközben megnyomod a profilgombot. Ha a helyváltásról jön esemény (pl. `05 xx`), akkor a szolgáltatás eseményből tudja meg az új helyet, lekérdezés nélkül.
-2. **Megvalósítás:**
-   - **Ha van esemény:** a szolgáltatás frissíti az aktív helyet és a tálcaikont („kézi: kék hely”). A következő ablakváltáskor újra a szabály dönt, akkor is, ha a profil ugyanaz, mint a gombnyomás előtt.
-   - **Ha nincs esemény:** ablakváltáskor (a 0,4 mp-es csillapítás után) a szolgáltatás egyszer kiolvassa az aktív helyet (`05/84`), és ha eltér a várttól, visszaválaszt. Ez ablakváltásonként egy rövid parancs, nem időzített lekérdezés. A tálcaikon ilyenkor csak a következő ablakváltáskor frissül.
-   - A driver mode-ot nem javaslom. Akkor az egér program nélkül nem váltana helyet, és ha a program összeomlik, a profilgomb nem működne.
-
-A „kézi váltás a következő ablakváltásig érvényes” viselkedés megmarad.
-
-### B) Egyedi kurzor Windowson
+### Egyedi kurzor Windowson
 
 **Javaslat: a rendszerkurzor ideiglenes cseréje** (`SetSystemCursor`), réteg nélkül.
 
@@ -292,5 +288,5 @@ Alternatíva: egy rétegablak, mint Linuxon (`WS_EX_LAYERED | WS_EX_TRANSPARENT`
 4. ✓ **M4 – grafikus felület és Windows-telepítő:** v0.1.0.
 5. ✓ **L1–L3 – Linux port:** hidraw, OpenRazer-figyelmeztetés, X11 ablakfigyelés, autostart, .deb, élő állapot; v0.2.0.
 6. ✓ **Dokk akkuszint-kapcsoló** (v0.2.1) és **egyedi kurzor** (v0.2.2), csak Linux.
-7. **Következő – a profilgombos váltás követése** (A terv, Linuxon kezdve).
-8. **Windows utolérése:** eseményolvasó lekérdezés nélkül, egyedi kurzor (B terv), a dokk-kapcsoló és az élő állapot kipróbálása Windowson, Windows-kiadás.
+7. ✓ **A profilgombos váltás követése**, Linuxon.
+8. **Következő – Windows utolérése:** eseményolvasó lekérdezés nélkül (ezzel a profilgomb követése is), egyedi kurzor, a dokk-kapcsoló és az élő állapot kipróbálása Windowson, Windows-kiadás.
