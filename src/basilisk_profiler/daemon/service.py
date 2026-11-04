@@ -20,7 +20,7 @@ from ..core import config as cfg
 from ..core import cursor as cur
 from ..core import protocol as p
 from ..core.device import DeviceError, RazerDevice
-from ..core.events import BatteryLevel, DeviceEvent, DpiChanged
+from ..core.events import BatteryLevel, DeviceEvent, DpiChanged, SlotChanged
 from ..core.model import Config, Profile, WindowInfo, onboard_store
 
 log = logging.getLogger(__name__)
@@ -65,6 +65,10 @@ class Service:
         self.config_error: str | None = None
         self.window = WindowInfo()
         self.active: Profile | None = None  # last profile written to the device
+        self._store: int | None = None  # slot selected for ``active``
+        # slot chosen with the mouse's profile button; valid until the next window switch
+        self.manual_store: int | None = None
+        self._live_profile: Profile | None = None  # what we last wrote to the live slot
         self.paused = False
         # onboard slot -> hash of what was last written there; persisted so a restart does
         # not rewrite the mouse's flash memory
@@ -112,10 +116,12 @@ class Service:
         self.reload_config()
         while True:
             try:
-                self.window = self._events.get_nowait()
+                window = self._events.get_nowait()
             except queue.Empty:
                 break
-            self._schedule(self._wanted())
+            if window != self.window:  # the same window again must not end a manual switch
+                self.window = window
+                self._schedule(self._wanted())
         self._sync_cursor()  # right away: the pointer does not need the mouse to answer
         # onboard slots first: a window profile kept onboard is applied by selecting its slot
         if self._onboard_pending and not self.paused and self._sync_onboard():
@@ -167,6 +173,7 @@ class Service:
             self._notify()
             return False
         self.active = None  # a reloaded profile may have new contents: write it again
+        self._live_profile = None
         self._schedule(self._wanted(), now=True)
         self._sync_cursor()
         self._onboard_pending = True
@@ -213,7 +220,7 @@ class Service:
         return self.config.profile_for(self.window) if self.config else None
 
     def _schedule(self, profile: Profile | None, now: bool = False) -> None:
-        if profile is None or profile == self.active:
+        if profile is None or (profile == self.active and self.manual_store is None):
             self._pending = None  # nothing to do, or a quick switch back
             return
         self._pending = (profile, self._clock() + (0 if now else DEBOUNCE))
@@ -296,26 +303,68 @@ class Service:
         return self._onboard_written.get(str(slot)) == _digest(profile, onboard_store(slot))
 
     def _apply(self, profile: Profile) -> bool:
-        """Onboard profiles are selected by slot; others are written to the live slot."""
+        """Onboard profiles are selected by slot; others are written to the live slot.
+
+        After a manual switch the live slot still holds ``active``: selecting it is enough.
+        """
         if self._onboard_ready(profile):
-            if not self._select(onboard_store(profile.onboard_slot)):
+            store = onboard_store(profile.onboard_slot)
+        else:
+            store = p.STORE_LIVE
+            if profile != self.active and not self._write(profile, store):
                 return False
-        elif not (self._write(profile, p.STORE_LIVE) and self._select(p.STORE_LIVE)):
+        if not self._select(store):
             return False
         log.info('profile %r applied (%s)', profile.name, self.window.process or '-')
+        if store == p.STORE_LIVE:
+            self._live_profile = profile
         self.active = profile
+        self._store = store
+        self.manual_store = None
         self._status_stale = True
         self._notify()
         return True
 
+    @property
+    def manual_profile(self) -> Profile | None:
+        """The profile in the manually chosen slot, if we know what that slot holds."""
+        if self.manual_store == p.STORE_LIVE:
+            return self._live_profile
+        if self.manual_store is None or self.config is None:
+            return None
+        for slot, profile in self.config.onboard().items():
+            if onboard_store(slot) == self.manual_store and self._onboard_ready(profile):
+                return profile
+        return None
+
+    def _read_slot(self) -> None:
+        """After a slot change event: did the user do it, or was it our own selection?"""
+        device = self._device_or_none()
+        if device is None:
+            return
+        try:
+            store = device.active_profile()
+        except (OSError, DeviceError, p.ProtocolError) as e:
+            log.debug('active slot read failed: %s', e)
+            return
+        manual = None if store == self._store else store
+        if manual == self.manual_store:
+            return
+        self.manual_store = manual
+        self._status_stale = True  # every slot has its own DPI stages
+        log.info('active slot 0x%02x, %s', store, 'manual' if manual else 'as expected')
+        self._notify()
+
     def _update_status(self) -> None:
-        """Track DPI / stage / battery from device events; the device is never polled.
+        """Track slot / DPI / stage / battery from device events; the device is never polled.
 
         The status is read once when a profile is applied and once per DPI button event
-        (for the stage index). Without an event reader (Windows for now) the DPI shown is
-        the one from the last profile switch.
+        (for the stage index); the active slot once per slot change event. Without an event
+        reader (Windows for now) the profile button goes unnoticed and the DPI shown is the
+        one from the last profile switch.
         """
         changed_by_user = False
+        slot_changed = False
         while True:
             try:
                 event = self._device_events.get_nowait()
@@ -325,10 +374,14 @@ class Service:
                 changed_by_user = True
                 self.status.dpi = event.x
                 self._status_stale = True  # read the stage index for it
+            elif isinstance(event, SlotChanged):
+                slot_changed = True
             elif isinstance(event, BatteryLevel):
                 if event.percent != self.status.battery:
                     self.status.battery = event.percent
                     self._notify()
+        if slot_changed:
+            self._read_slot()
         if self._status_stale and self._device is not None:
             self._status_stale = False  # one attempt; a sleeping mouse just keeps old values
             self._read_dpi()

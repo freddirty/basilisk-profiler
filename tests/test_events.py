@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-from basilisk_profiler.core.events import BatteryLevel, DpiChanged, parse_event
+from basilisk_profiler.core.events import BatteryLevel, DpiChanged, SlotChanged, parse_event
 
 
 def test_dpi_event_from_capture():
@@ -10,6 +10,11 @@ def test_dpi_event_from_capture():
 def test_battery_event_from_capture():
     raw = bytes.fromhex('05 31 cd 00 00 01 00 00')
     assert parse_event(raw) == BatteryLevel(80)
+
+
+def test_slot_event_from_probe():
+    raw = bytes.fromhex('05 39 00 00 00 00 00 00 00 00 00 00 00 00 00 00')
+    assert parse_event(raw) == SlotChanged()
 
 
 def test_other_reports_ignored():

@@ -6,7 +6,7 @@ import pytest
 from basilisk_profiler.core import config as cfg
 from basilisk_profiler.core import protocol as p
 from basilisk_profiler.core.device import DeviceError
-from basilisk_profiler.core.events import BatteryLevel, DpiChanged
+from basilisk_profiler.core.events import BatteryLevel, DpiChanged, SlotChanged
 from basilisk_profiler.core.model import WindowInfo
 from basilisk_profiler.daemon import service as svc
 
@@ -423,3 +423,127 @@ def test_dock_choice_reapplied_after_reconnect(env):
     service.reload_config(force=True)  # anything that reopens the device
     service.tick()
     assert device.dock == p.BATTERY_EFFECT
+
+
+def press_profile_button(service, device, store):
+    device.active_store = store
+    service.on_device_event(SlotChanged())
+    service.tick()
+
+
+def settle(service, clock):
+    service.tick()
+    clock.now += svc.DEBOUNCE
+    service.tick()
+
+
+def test_profile_button_is_tracked_as_manual_slot(env):
+    service, clock, device, *_ = env
+    service.tick()
+    device.reports.clear()
+    press_profile_button(service, device, 0x04)
+    assert service.manual_store == 0x04
+    assert device.active_store == 0x04  # left alone until the next window switch
+    assert device.reports == []
+
+
+def test_own_selection_is_not_a_manual_switch(env):
+    service, clock, device, *_ = env
+    service.tick()
+    assert device.active_store == p.STORE_LIVE
+    service.on_device_event(SlotChanged())  # the mouse reports our own selection too
+    service.tick()
+    assert service.manual_store is None
+
+
+def test_cycling_back_to_the_expected_slot_ends_manual(env):
+    service, clock, device, *_ = env
+    service.tick()
+    press_profile_button(service, device, 0x02)
+    press_profile_button(service, device, p.STORE_LIVE)
+    assert service.manual_store is None
+
+
+def test_window_with_same_profile_selects_again_without_writing(env):
+    service, clock, device, *_ = env
+    service.tick()
+    press_profile_button(service, device, 0x04)
+    device.reports.clear()
+    service.on_window(WindowInfo(process='xed'))  # also the default profile
+    settle(service, clock)
+    assert device.active_store == p.STORE_LIVE
+    assert service.manual_store is None
+    assert service.active.name == 'general'
+    assert device.reports == []  # the live slot still holds it
+
+
+def test_window_with_other_profile_is_written_after_manual_switch(env):
+    service, clock, device, *_ = env
+    service.tick()
+    press_profile_button(service, device, 0x04)
+    device.reports.clear()
+    service.on_window(WindowInfo(process='firefox'))
+    settle(service, clock)
+    assert service.active.name == 'browser'
+    assert device.active_store == p.STORE_LIVE and service.manual_store is None
+    assert len(device.reports) == len(service.config.profiles['browser'].reports())
+
+
+def test_same_window_again_keeps_the_manual_slot(env):
+    service, clock, device, *_ = env
+    service.on_window(WindowInfo(process='xed'))
+    settle(service, clock)
+    press_profile_button(service, device, 0x04)
+    service.on_window(WindowInfo(process='xed'))
+    settle(service, clock)
+    assert device.active_store == 0x04 and service.manual_store == 0x04
+
+
+def test_slot_is_read_only_on_events(env):
+    service, clock, device, *_ = env
+    reads = []
+    real = device.active_profile
+    device.active_profile = lambda: reads.append(1) or real()
+    service.tick()
+    reads.clear()
+    for _ in range(50):
+        clock.now += 1
+        service.tick()
+    assert reads == []
+    service.on_device_event(SlotChanged())
+    service.on_device_event(SlotChanged())
+    service.tick()
+    assert len(reads) == 1
+
+
+def test_failed_slot_read_keeps_state(env):
+    service, clock, device, *_ = env
+    service.tick()
+    device.fail = True
+    service.on_device_event(SlotChanged())
+    service.tick()
+    assert service.manual_store is None
+    device.fail = False
+
+
+def test_manual_switch_rereads_dpi_of_that_slot(env):
+    service, clock, device, *_ = env
+    service.tick()
+    device.stage_table = (500, 1000, 2000, 3000, 4000)
+    press_profile_button(service, device, 0x04)
+    assert service.status.dpi == 2000
+
+
+def test_manual_profile_names_the_slot_contents(env):
+    service, clock, device, path, _ = env
+    path.write_text(cfg.EXAMPLE.replace('name = "browser"', 'name = "browser"\nonboard_slot = 2'))
+    service.reload_config(force=True)
+    service.tick()
+    press_profile_button(service, device, 0x03)
+    assert service.manual_profile.name == 'browser'
+    press_profile_button(service, device, 0x04)
+    assert service.manual_profile is None  # not one of ours
+    service.on_window(WindowInfo(process='firefox'))
+    settle(service, clock)
+    press_profile_button(service, device, p.STORE_LIVE)
+    assert service.manual_profile.name == 'general'
