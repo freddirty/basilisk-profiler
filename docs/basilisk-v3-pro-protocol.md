@@ -166,7 +166,7 @@ Kiegészítő lekérdezések: a `04/85` (arg.: hely) az aktuális DPI-t adja (`h
 - A többi Razer-billentyűkód (report 4) és a report 5 (`hardwareEventReportID`, pl. `05 31 fa 00 00 01`) tartalma.
 - ~~A gomb-ID-k teljes listája~~, ~~egyéb kimenettípusok~~, ~~hány beépített hely van~~: a 2. rögzítés megválaszolta.
 - ~~Driver mode nélkül (normal mode) a profilgomb vajon a beépített helyek között vált-e magától?~~ **Igen**: a felhasználó szerint Linuxon, Synapse nélkül az egér gombjával lehet profilt váltani. A beépített profilhelyek tehát önállóan is működnek; a driver mode csak átirányítja a gombot a hosthoz.
-- Hogyan lehet parancsból kiválasztani az aktív beépített profilhelyet (00/C0? vagy egy még nem látott parancs)? Továbbá: hány hely van, és tárol-e a hely LED-színt/nevet?
+- ~~Hogyan lehet parancsból kiválasztani az aktív beépített profilhelyet?~~ `05/04 [hely, 0]` (lásd „Az aktív hely”). ~~Hány hely van?~~ 4 + az élő hely. Nyitott még: tárol-e a hely nevet (a Synapse a 05/08-cal ír ide), és ezt kell-e nekünk is írni.
 
 ## A dokk saját világítása (Linux, 2026-11-03)
 
