@@ -82,3 +82,45 @@ def test_tray_profile_letter_and_status_lines(tmp_path):
     assert status_lines(S()) == ['DPI: 1600 (3/5. fokozat)', 'Akku: 80%']
     S.status = LiveStatus()
     assert status_lines(S()) == []
+
+
+def test_tray_language_switch(app, tmp_path, monkeypatch):
+    from basilisk_profiler import i18n
+    from basilisk_profiler.core.ui_settings import UiSettings
+    from basilisk_profiler.daemon import tray as tray_mod
+    from basilisk_profiler.daemon.service import Service
+
+    def no_device():
+        raise OSError('no device in tests')
+
+    monkeypatch.setattr(tray_mod, 'autostart', lambda: None)
+    path = tmp_path / 'config.toml'
+    cfg.ensure_exists(path)
+    (tmp_path / 'tray.json').write_text('{"language": "hu"}')
+    tray = tray_mod.Tray(app, Service(path, open_device=no_device))
+    try:
+        assert tray.pause.text() == 'Szüneteltetés'
+        assert tray.language_actions['hu'].isChecked()
+        tray.language_actions['en'].trigger()
+        assert i18n.language() == 'en'
+        assert tray.pause.text() == 'Pause'
+        assert tray.language_menu.title() == 'Language'
+        assert tray.status.text().startswith('Profile:')
+        assert UiSettings(tmp_path / 'tray.json').get('language', None) == 'en'
+        tray.language_actions['auto'].trigger()
+        assert UiSettings(tmp_path / 'tray.json').get('language', None) == 'auto'
+    finally:
+        tray.timer.stop()
+        tray.tray.hide()
+
+
+def test_main_window_in_english(app, tmp_path):
+    from basilisk_profiler import i18n
+    from basilisk_profiler.gui.main_window import MainWindow
+
+    i18n.set_language('en')
+    window = MainWindow(tmp_path / 'config.toml')
+    assert [window.tabs.tabText(i) for i in range(window.tabs.count())] == [
+        'Buttons', 'DPI', 'Cursor', 'Rules (automatic switching)']
+    assert window.button_editor.title() == 'Front side button (Mouse Button 5)'
+    window.close()

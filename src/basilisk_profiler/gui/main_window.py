@@ -45,26 +45,28 @@ from ..core import cursor as cur
 from ..core import protocol as p
 from ..core import synapse_import
 from ..core.model import BUTTON_IDS, button_name
+from ..i18n import N_, tr
 from ..platform import list_windows
 from .draft import RULE_FIELDS, ConfigDraft, describe_action
 from .keymap import action_from_key, key_name
 from .mouse_view import MouseView
 
+# English texts, translated where they are shown (the language can change at run time)
 BUTTON_TITLES = {
-    'button4': 'Hátsó oldalgomb (Mouse Button 4)',
-    'button5': 'Elülső oldalgomb (Mouse Button 5)',
-    'side_bottom': 'Érzékenység-clutch (hüvelykujj-gomb)',
-    'wheel_click': 'Görgőkattintás',
-    'tilt_left': 'Görgő döntése balra',
-    'tilt_right': 'Görgő döntése jobbra',
-    'scroll_mode': 'Görgő mód gomb (racsnis / sima)',
-    'dpi_cycle': 'DPI-fokozat váltó gomb',
-    'profile': 'Profilváltó gomb (alul)',
+    'button4': N_('Back side button (Mouse Button 4)'),
+    'button5': N_('Front side button (Mouse Button 5)'),
+    'side_bottom': N_('Sensitivity clutch (thumb button)'),
+    'wheel_click': N_('Wheel click'),
+    'tilt_left': N_('Wheel tilt left'),
+    'tilt_right': N_('Wheel tilt right'),
+    'scroll_mode': N_('Scroll mode button (tactile / free)'),
+    'dpi_cycle': N_('DPI stage button'),
+    'profile': N_('Profile button (bottom)'),
 }
-ONBOARD_CHOICES = ((None, 'Nincs (csak a program váltja)'), (1, '1. hely (piros)'),
-                   (2, '2. hely (zöld)'), (3, '3. hely (kék)'), (4, '4. hely (cián)'))
-RULE_TITLES = {'match_process': 'Program', 'match_class': 'Ablakosztály (regex)',
-               'match_title': 'Ablakcím (regex)'}
+ONBOARD_CHOICES = ((None, N_('None (switched by the program only)')), (1, N_('Slot 1 (red)')),
+                   (2, N_('Slot 2 (green)')), (3, N_('Slot 3 (blue)')), (4, N_('Slot 4 (cyan)')))
+RULE_TITLES = {'match_process': N_('Program'), 'match_class': N_('Window class (regex)'),
+               'match_title': N_('Window title (regex)')}
 
 
 class KeyCaptureEdit(QLineEdit):
@@ -75,7 +77,7 @@ class KeyCaptureEdit(QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
-        self.setPlaceholderText('kattints ide, majd nyomd le a billentyűt')
+        self.setPlaceholderText(tr('click here, then press the key'))
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -87,14 +89,14 @@ class KeyCaptureEdit(QLineEdit):
             self.captured.emit(action)
 
 
-MOUSE_CHOICES = ((1, 'Bal gomb'), (2, 'Jobb gomb'), (3, 'Középső gomb'), (4, 'Vissza (4)'),
-                 (5, 'Előre (5)'), (9, 'Görgetés fel'))
-MEDIA_CHOICES = (('play_pause', 'Lejátszás / szünet'), ('next', 'Következő szám'),
-                 ('previous', 'Előző szám'), ('stop', 'Leállítás'),
-                 ('volume_up', 'Hangerő fel'), ('volume_down', 'Hangerő le'),
-                 ('mute', 'Némítás'))
-DPI_CHOICES = (('dpi:stage_up', 'DPI-fokozat fel'), ('dpi:cycle', 'DPI-fokozatok körbe'),
-               ('dpi:clutch', 'Érzékenység-clutch (lenyomva tartva)'))
+MOUSE_CHOICES = ((1, N_('Left button')), (2, N_('Right button')), (3, N_('Middle button')),
+                 (4, N_('Back (4)')), (5, N_('Forward (5)')), (9, N_('Scroll up')))
+MEDIA_CHOICES = (('play_pause', N_('Play / pause')), ('next', N_('Next track')),
+                 ('previous', N_('Previous track')), ('stop', N_('Stop')),
+                 ('volume_up', N_('Volume up')), ('volume_down', N_('Volume down')),
+                 ('mute', N_('Mute')))
+DPI_CHOICES = (('dpi:stage_up', N_('DPI stage up')), ('dpi:cycle', N_('Cycle DPI stages')),
+               ('dpi:clutch', N_('Sensitivity clutch (while held)')))
 
 
 class ButtonEditor(QGroupBox):
@@ -105,9 +107,9 @@ class ButtonEditor(QGroupBox):
     MODES = ('default', 'mouse', 'key', 'media', 'dpi', 'profile', 'disabled')
 
     def __init__(self, parent=None):
-        super().__init__('Gomb', parent)
-        titles = ('Alapértelmezett (gyári funkció)', 'Egérgomb', 'Billentyű / kombináció',
-                  'Multimédia', 'DPI-funkció', 'Következő profil', 'Letiltva')
+        super().__init__(tr('Button'), parent)
+        titles = (tr('Default (factory function)'), tr('Mouse button'), tr('Key / combination'),
+                  tr('Multimedia'), tr('DPI function'), tr('Next profile'), tr('Disabled'))
         self.radios = {}
         self.group = QButtonGroup(self)
         for i, (mode, title) in enumerate(zip(self.MODES, titles, strict=True)):
@@ -118,14 +120,14 @@ class ButtonEditor(QGroupBox):
         self.mode_key = self.radios['key']
         self.mouse_button = QComboBox()
         for n, label in MOUSE_CHOICES:
-            self.mouse_button.addItem(label, n)
+            self.mouse_button.addItem(tr(label), n)
         self.key = KeyCaptureEdit()
         self.media = QComboBox()
         for name, label in MEDIA_CHOICES:
-            self.media.addItem(label, name)
+            self.media.addItem(tr(label), name)
         self.dpi_function = QComboBox()
         for value, label in DPI_CHOICES:
-            self.dpi_function.addItem(label, value)
+            self.dpi_function.addItem(tr(label), value)
         self.clutch_dpi = QSpinBox()
         self.clutch_dpi.setRange(p.DPI_MIN, p.DPI_MAX)
         self.clutch_dpi.setSingleStep(50)
@@ -191,7 +193,8 @@ class ButtonEditor(QGroupBox):
             mode = 'disabled'
         elif action.startswith('raw:'):
             mode = None
-            self.other.setText(f'Ezt a funkciót még nem tudja szerkeszteni a program ({action}).')
+            self.other.setText(tr('The program cannot edit this function yet ({action}).',
+                                  action=action))
         else:
             mode = 'key'
             self.key.setText(action)
@@ -245,26 +248,26 @@ class DpiEditor(QGroupBox):
     changed = Signal()
 
     def __init__(self, parent=None):
-        super().__init__('DPI-fokozatok', parent)
-        self.enabled = QCheckBox('A profil állítsa be a DPI-fokozatokat')
+        super().__init__(tr('DPI stages'), parent)
+        self.enabled = QCheckBox(tr('The profile sets the DPI stages'))
         self.count = QSpinBox()
         self.count.setRange(1, p.MAX_DPI_STAGES)
         self.stages = []
         self.active_group = QButtonGroup(self)
         form = QFormLayout()
         form.addRow(self.enabled)
-        form.addRow('Fokozatok száma', self.count)
+        form.addRow(tr('Number of stages'), self.count)
         for i in range(p.MAX_DPI_STAGES):
             spin = QSpinBox()
             spin.setRange(p.DPI_MIN, p.DPI_MAX)
             spin.setSingleStep(50)
             spin.setSuffix(' DPI')
-            radio = QRadioButton('aktív')
+            radio = QRadioButton(tr('active'))
             self.active_group.addButton(radio, i + 1)
             row = QHBoxLayout()
             row.addWidget(spin, 1)
             row.addWidget(radio)
-            form.addRow(f'{i + 1}. fokozat', row)
+            form.addRow(tr('Stage {n}', n=i + 1), row)
             self.stages.append((spin, radio))
             spin.valueChanged.connect(self._changed)
         layout = QVBoxLayout(self)
@@ -315,13 +318,13 @@ class CursorEditor(QGroupBox):
     changed = Signal()
 
     def __init__(self, config_dir: Path, parent=None):
-        super().__init__('Egyedi kurzor', parent)
+        super().__init__(tr('Custom cursor'), parent)
         self.setMinimumWidth(460)
         self.config_dir = config_dir
-        self.enabled = QCheckBox('A profil ablakában egyedi kurzor legyen')
+        self.enabled = QCheckBox(tr("Use a custom cursor in the profile's windows"))
         self.path = QLineEdit()
-        self.path.setPlaceholderText('pl. yolomouse-pink-huge.cur')
-        browse = QPushButton('Tallózás…')
+        self.path.setPlaceholderText(tr('e.g. yolomouse-pink-huge.cur'))
+        browse = QPushButton(tr('Browse…'))
         browse.clicked.connect(self._browse)
         self.browse = browse
         self.scale = QDoubleSpinBox()
@@ -334,19 +337,19 @@ class CursorEditor(QGroupBox):
         self.error = QLabel()
         self.error.setStyleSheet('color: #c62828;')
         self.error.setWordWrap(True)
-        note = QLabel('Kurzorképet a program nem tartalmaz: a saját .cur fájlodat válaszd '
-                      '(például a YoloMouse Cursors/Huge/2.cur fájlját). A relatív név a '
-                      f'{cur.cursor_dir(config_dir)} mappában keresendő. A kurzor csak akkor '
-                      'látszik, amikor a profilhoz tartozó ablak aktív.')
+        note = QLabel(tr('The program comes with no cursor images: choose your own .cur file '
+                         "(for example YoloMouse's Cursors/Huge/2.cur). A relative name is "
+                         'looked up in the {folder} folder. The cursor is only shown while a '
+                         "window of the profile is active.", folder=cur.cursor_dir(config_dir)))
         note.setWordWrap(True)
         row = QHBoxLayout()
         row.addWidget(self.path, 1)
         row.addWidget(browse)
         form = QFormLayout()
         form.addRow(self.enabled)
-        form.addRow('Kurzorfájl', row)
-        form.addRow('Nagyítás', self.scale)
-        form.addRow('Előnézet', self.preview)
+        form.addRow(tr('Cursor file'), row)
+        form.addRow(tr('Scale'), self.scale)
+        form.addRow(tr('Preview'), self.preview)
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(self.error)
@@ -374,8 +377,8 @@ class CursorEditor(QGroupBox):
     def _browse(self):
         folder = cur.cursor_dir(self.config_dir)
         start = str(folder if folder.is_dir() else Path.home())
-        name, _ = QFileDialog.getOpenFileName(self, 'Kurzorfájl', start,
-                                              'Kurzor (*.cur *.ico);;Minden fájl (*)')
+        name, _ = QFileDialog.getOpenFileName(self, tr('Cursor file'), start,
+                                              tr('Cursor (*.cur *.ico);;All files (*)'))
         if not name:
             return
         chosen = Path(name)
@@ -414,10 +417,10 @@ class CursorEditor(QGroupBox):
 class WindowPicker(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Futó ablak kiválasztása')
+        self.setWindowTitle(tr('Choose a running window'))
         self.resize(640, 400)
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(['Program', 'Ablakosztály', 'Cím'])
+        self.table.setHorizontalHeaderLabels([tr('Program'), tr('Window class'), tr('Title')])
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -447,15 +450,15 @@ class RulesTab(QWidget):
         super().__init__(parent)
         self.draft = draft
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(['Feltétel', 'Érték', 'Profil'])
+        self.table.setHorizontalHeaderLabels([tr('Condition'), tr('Value'), tr('Profile')])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        add = QPushButton('Új szabály')
-        pick = QPushButton('Futó ablakból…')
-        remove = QPushButton('Törlés')
-        up = QPushButton('Fel')
-        down = QPushButton('Le')
+        add = QPushButton(tr('New rule'))
+        pick = QPushButton(tr('From a running window…'))
+        remove = QPushButton(tr('Delete'))
+        up = QPushButton(tr('Up'))
+        down = QPushButton(tr('Down'))
         add.clicked.connect(lambda: self._add('match_process', ''))
         pick.clicked.connect(self._pick)
         remove.clicked.connect(self._remove)
@@ -465,8 +468,8 @@ class RulesTab(QWidget):
         for b in (add, pick, remove, up, down):
             buttons.addWidget(b)
         buttons.addStretch(1)
-        hint = QLabel('A szabályokat felülről lefelé nézi a program; az első egyező dönt. '
-                      'Ha egyik sem illik, az alapértelmezett profil él.')
+        hint = QLabel(tr('The rules are checked from top to bottom; the first match decides. '
+                         'If none matches, the default profile is used.'))
         hint.setWordWrap(True)
         layout = QVBoxLayout(self)
         layout.addWidget(hint)
@@ -483,7 +486,7 @@ class RulesTab(QWidget):
             self.table.insertRow(i)
             kind = QComboBox()
             for f in RULE_FIELDS:
-                kind.addItem(RULE_TITLES[f], f)
+                kind.addItem(tr(RULE_TITLES[f]), f)
             kind.setCurrentIndex(RULE_FIELDS.index(field))
             prof = QComboBox()
             prof.addItems(self.draft.names())
@@ -537,16 +540,16 @@ class RulesTab(QWidget):
 class ImportDialog(QDialog):
     def __init__(self, imported, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Profilok importálása a Synapse-ból')
+        self.setWindowTitle(tr('Import profiles from Synapse'))
         self.resize(560, 380)
         self.list = QListWidget()
         for item in imported:
             prof = item.profile
             detail = ', '.join(f'{button_name(b)}={describe_action(a)}'
                                for b, a in ((b, _fmt(a)) for b, a in prof.buttons.items()))
-            text = f'{prof.name}  —  {detail or "nincs gombkiosztás"}'
+            text = f'{prof.name}  —  {detail or tr("no button mapping")}'
             if item.skipped:
-                text += f'  (kihagyva: {len(item.skipped)})'
+                text += tr('  (skipped: {count})', count=len(item.skipped))
             entry = QListWidgetItem(text)
             entry.setFlags(entry.flags() | Qt.ItemIsUserCheckable)
             entry.setCheckState(Qt.Checked)
@@ -557,8 +560,8 @@ class ImportDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel('A Synapse helyi adatbázisában talált profilok. A Hypershift-'
-                                'kiosztások és a nem támogatott gombok kimaradnak.'))
+        layout.addWidget(QLabel(tr("Profiles found in Synapse's local database. Hypershift "
+                                   'mappings and unsupported buttons are left out.')))
         layout.addWidget(self.list)
         layout.addWidget(buttons)
 
@@ -587,26 +590,27 @@ class MainWindow(QMainWindow):
         self.profiles = QListWidget()
         self.profiles.currentTextChanged.connect(self._select_profile)
         prof_buttons = QHBoxLayout()
-        for label, slot in (('Új', self._new_profile), ('Másolat', self._duplicate),
-                            ('Átnevezés', self._rename), ('Törlés', self._delete)):
+        for label, slot in ((tr('New'), self._new_profile), (tr('Copy'), self._duplicate),
+                            (tr('Rename'), self._rename), (tr('Delete'), self._delete)):
             b = QPushButton(label)
             b.clicked.connect(slot)
             prof_buttons.addWidget(b)
-        self.default_button = QPushButton('Legyen az alapértelmezett')
+        self.default_button = QPushButton(tr('Make default'))
         self.default_button.clicked.connect(self._make_default)
         left = QWidget()
         left_layout = QVBoxLayout(left)
-        left_layout.addWidget(QLabel('Profilok'))
+        left_layout.addWidget(QLabel(tr('Profiles')))
         left_layout.addWidget(self.profiles)
         left_layout.addLayout(prof_buttons)
         left_layout.addWidget(self.default_button)
         self.onboard = QComboBox()
         for slot, label in ONBOARD_CHOICES:
-            self.onboard.addItem(label, slot)
-        self.onboard.setToolTip('A beépített helyre írt profil az egérben marad: a program '
-                                'nélkül, akár másik gépen is a profilgombbal választható.')
+            self.onboard.addItem(tr(label), slot)
+        self.onboard.setToolTip(tr('A profile written to an onboard slot stays in the mouse: it '
+                                   'can be chosen with the profile button without the program, '
+                                   'even on another computer.'))
         self.onboard.currentIndexChanged.connect(self._onboard_changed)
-        left_layout.addWidget(QLabel('Beépített hely az egérben'))
+        left_layout.addWidget(QLabel(tr('Onboard slot in the mouse')))
         left_layout.addWidget(self.onboard)
 
         # buttons tab
@@ -640,10 +644,10 @@ class MainWindow(QMainWindow):
         self.rules_tab.changed.connect(self._mark_dirty)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(buttons_tab, 'Gombok')
+        self.tabs.addTab(buttons_tab, tr('Buttons'))
         self.tabs.addTab(dpi_tab, 'DPI')
-        self.tabs.addTab(cursor_tab, 'Kurzor')
-        self.tabs.addTab(self.rules_tab, 'Szabályok (automatikus váltás)')
+        self.tabs.addTab(cursor_tab, tr('Cursor'))
+        self.tabs.addTab(self.rules_tab, tr('Rules (automatic switching)'))
 
         splitter = QSplitter()
         splitter.addWidget(left)
@@ -652,10 +656,11 @@ class MainWindow(QMainWindow):
         splitter.setSizes([260, 840])
         self.setCentralWidget(splitter)
 
-        save = QAction('Mentés', self, shortcut=QKeySequence.Save, triggered=self.save)
-        import_action = QAction('Importálás a Synapse-ból…', self, triggered=self.import_synapse)
-        reload_action = QAction('Újratöltés a fájlból', self, triggered=self.reload_from_file)
-        menu = self.menuBar().addMenu('Fájl')
+        save = QAction(tr('Save'), self, shortcut=QKeySequence.Save, triggered=self.save)
+        import_action = QAction(tr('Import from Synapse…'), self,
+                                triggered=self.import_synapse)
+        reload_action = QAction(tr('Reload from file'), self, triggered=self.reload_from_file)
+        menu = self.menuBar().addMenu(tr('File'))
         for a in (save, import_action, reload_action):
             menu.addAction(a)
         toolbar = self.addToolBar('main')
@@ -679,7 +684,7 @@ class MainWindow(QMainWindow):
         for name in self.draft.names():
             text = f'{name}  ★' if name == self.draft.default else name
             if slot := self.draft.onboard_slot(name):
-                text += f'   [{slot}. hely]'
+                text += tr('   [slot {n}]', n=slot)
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, name)
             self.profiles.addItem(item)
@@ -721,11 +726,11 @@ class MainWindow(QMainWindow):
                                for b in BUTTON_IDS.values()})
 
     def _ask_name(self, title: str, text: str = '') -> str | None:
-        name, ok = QInputDialog.getText(self, title, 'Profil neve:', text=text)
+        name, ok = QInputDialog.getText(self, title, tr('Profile name:'), text=text)
         return name.strip() if ok and name.strip() else None
 
     def _new_profile(self):
-        if name := self._ask_name('Új profil'):
+        if name := self._ask_name(tr('New profile')):
             self._refresh_profiles(self.draft.add_profile(name))
             self._mark_dirty()
 
@@ -735,11 +740,11 @@ class MainWindow(QMainWindow):
             self._mark_dirty()
 
     def _rename(self):
-        if self.current and (name := self._ask_name('Átnevezés', self.current)):
+        if self.current and (name := self._ask_name(tr('Rename'), self.current)):
             try:
                 self._refresh_profiles(self.draft.rename(self.current, name))
             except ValueError as e:
-                QMessageBox.warning(self, 'Átnevezés', str(e))
+                QMessageBox.warning(self, tr('Rename'), str(e))
                 return
             self._mark_dirty()
 
@@ -747,7 +752,8 @@ class MainWindow(QMainWindow):
         if not self.current:
             return
         answer = QMessageBox.question(
-            self, 'Törlés', f'Törlöd a(z) „{self.current}” profilt és a hozzá tartozó szabályokat?')
+            self, tr('Delete'),
+            tr('Delete the profile “{name}” and its rules?', name=self.current))
         if answer == QMessageBox.Yes:
             self.draft.delete(self.current)
             self.current = None
@@ -766,7 +772,7 @@ class MainWindow(QMainWindow):
         self.current_button = button
         self.mouse.select(button)
         name = button_name(button)
-        self.button_editor.load(BUTTON_TITLES.get(name, name),
+        self.button_editor.load(tr(BUTTON_TITLES[name]) if name in BUTTON_TITLES else name,
                                 self.draft.button(self.current, button))
 
     def _button_changed(self, action):
@@ -794,17 +800,18 @@ class MainWindow(QMainWindow):
         try:
             self.draft.save(self.config_path)
         except (cfg.ConfigError, OSError) as e:
-            QMessageBox.warning(self, 'Mentés', f'Nem menthető:\n{e}')
+            QMessageBox.warning(self, tr('Save'), tr('Cannot save:\n{error}', error=e))
             return False
         self._mark_dirty()
-        self.statusBar().showMessage('Elmentve – a háttérszolgáltatás magától átveszi.', 5000)
+        self.statusBar().showMessage(tr('Saved – the background service picks it up by itself.'),
+                                     5000)
         return True
 
     def reload_from_file(self):
         try:
             self.draft = ConfigDraft.load(self.config_path)
         except cfg.ConfigError as e:
-            QMessageBox.warning(self, 'Újratöltés', str(e))
+            QMessageBox.warning(self, tr('Reload'), str(e))
             return
         self.rules_tab.draft = self.draft
         self._refresh_profiles()
@@ -816,18 +823,19 @@ class MainWindow(QMainWindow):
         if default is None or not default.is_dir():
             # no local Synapse (Linux): a copy of its data folder from a Windows machine
             chosen = QFileDialog.getExistingDirectory(
-                self, 'A Synapse adatmappája (Windowsról átmásolva: '
-                      '%LOCALAPPDATA%\\Razer\\RazerAppEngine\\User Data)')
+                self, tr("Synapse's data folder (copied from Windows: {path})",
+                         path='%LOCALAPPDATA%\\Razer\\RazerAppEngine\\User Data'))
             if not chosen:
                 return
             folder = Path(chosen)
         try:
             imported = synapse_import.read_profiles(folder)
         except (OSError, ValueError) as e:
-            QMessageBox.warning(self, 'Importálás', f'A Synapse adatai nem olvashatók:\n{e}')
+            QMessageBox.warning(self, tr('Import'),
+                                tr("Cannot read Synapse's data:\n{error}", error=e))
             return
         if not imported:
-            QMessageBox.information(self, 'Importálás', 'Nem találtam Basilisk-profilt.')
+            QMessageBox.information(self, tr('Import'), tr('No Basilisk profile was found.'))
             return
         dialog = ImportDialog(imported, self)
         if dialog.exec():
@@ -844,7 +852,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.draft.dirty:
             answer = QMessageBox.question(
-                self, 'Kilépés', 'Mented a módosításokat?',
+                self, tr('Quit'), tr('Save the changes?'),
                 QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
             if answer == QMessageBox.Cancel or (answer == QMessageBox.Save and not self.save()):
                 event.ignore()
