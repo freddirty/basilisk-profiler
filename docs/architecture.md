@@ -244,14 +244,45 @@ Protokoll:
 
 Windows:
 
-- [ ] DPI- és akkuesemények olvasása Windowson lekérdezés nélkül (a dokk 1. interfészének input reportjai, pl. átfedéses `ReadFile`-lal), utána hardveres próba és Windows-kiadás.
-- [ ] Egyedi kurzor Windowson: kell-e egyáltalán (ott a YoloMouse elérhető), és ha igen, rétegablakkal vagy a rendszerkurzor cseréjével?
+- [ ] DPI- és akkuesemények olvasása Windowson lekérdezés nélkül (a dokk 1. interfészének input reportjai, pl. átfedéses `ReadFile`-lal), utána hardveres próba és Windows-kiadás. *Döntés (2026-11-04): így marad, a Windows-gépen folytatjuk.*
+- [x] Kell-e egyedi kurzor Windowson? *Döntés (2026-11-04): kell.* Terv: „Tervek jóváhagyásra” / B.
 
 Működés:
 
-- [ ] A profilgombbal választott helyet a szolgáltatás nem követi. Ha utána olyan ablakra váltasz, amelynek ugyanaz a profilja, mint a gombnyomás előtti, a program nem választja vissza (mert szerinte már az az aktív). Kell-e ezt kezelni (pl. a hely ellenőrzése profilváltás előtt, vagy driver mode-ban a gomb jelzésének kezelése)?
+- [x] A profilgombbal választott helyet a szolgáltatás nem követi (ha utána ugyanolyan profilú ablakra váltasz, nem választja vissza). *Döntés (2026-11-04): kezelni kell.* Terv: „Tervek jóváhagyásra” / A.
 - [ ] Wayland-támogatás: a Mint Cinnamon egyelőre X11, de a kurzorréteg és az ablakfigyelés Waylanden más megoldást kívánna.
 - [ ] A kurzorréteg olyan játéknál, amely saját kurzort rajzol, vagy kizárólagos teljes képernyőt használ (kompozitor nélkül): ott a réteg nem látszik, vagy két kurzor lesz. Kell-e profilonként jelezni vagy tesztelni?
+
+## Tervek jóváhagyásra
+
+Kódolás csak jóváhagyás után.
+
+### A) A profilgombos váltás követése
+
+**Ma:** a szolgáltatás azt hiszi, hogy az az aktív hely, amit utoljára ő választott. A profilgomb után ez nem igaz, ezért egy azonos profilú ablakra váltva nem választ vissza, és a tálcaikon is a régi profilt mutatja.
+
+**Javaslat, két lépésben:**
+
+1. **Próba (Linux, mentéssel, ~2 perc):** normal mode-ban figyeljük a dokk 1. interfészét, miközben megnyomod a profilgombot. Ha a helyváltásról jön esemény (pl. `05 xx`), akkor a szolgáltatás eseményből tudja meg az új helyet, lekérdezés nélkül.
+2. **Megvalósítás:**
+   - **Ha van esemény:** a szolgáltatás frissíti az aktív helyet és a tálcaikont („kézi: kék hely”). A következő ablakváltáskor újra a szabály dönt, akkor is, ha a profil ugyanaz, mint a gombnyomás előtt.
+   - **Ha nincs esemény:** ablakváltáskor (a 0,4 mp-es csillapítás után) a szolgáltatás egyszer kiolvassa az aktív helyet (`05/84`), és ha eltér a várttól, visszaválaszt. Ez ablakváltásonként egy rövid parancs, nem időzített lekérdezés. A tálcaikon ilyenkor csak a következő ablakváltáskor frissül.
+   - A driver mode-ot nem javaslom. Akkor az egér program nélkül nem váltana helyet, és ha a program összeomlik, a profilgomb nem működne.
+
+A „kézi váltás a következő ablakváltásig érvényes” viselkedés megmarad.
+
+### B) Egyedi kurzor Windowson
+
+**Javaslat: a rendszerkurzor ideiglenes cseréje** (`SetSystemCursor`), réteg nélkül.
+
+- Amikor a kurzoros profil ablaka aktív lesz, a program a felhasználó `.cur` fájlját a megadott nagyítással betölti (`CreateIconIndirect`), és lecseréli vele a nyíl kurzort (OCR_NORMAL, igény szerint a kéz- és szöveges kurzort is).
+- Más ablakra váltáskor és kilépéskor visszaállítja a rendszer kurzorait (`SystemParametersInfo(SPI_SETCURSORS)`).
+- Előny: nincs késés, mert maga a Windows rajzolja, és kizárólagos teljes képernyőn is működik, ahol egy rétegablak nem látszana. A játékhoz nem nyúl (nincs DLL-injektálás, mint a YoloMouse-nál), anti-cheat szempontból semleges.
+- Kockázat: ha a program összeomlik, a nagy kurzor a rendszerben marad. Ezért induláskor mindig visszaállítjuk a rendszer kurzorait, és a tálcamenübe kerül egy „Kurzor visszaállítása” pont. Kijelentkezés is visszaállítja.
+- Korlát: ha a játék saját kurzort rajzol vagy saját kurzorképet állít be, a csere nem látszik. Unity-játékoknál (Last Epoch) a rendszer nyilát használják, ott működnie kell. Ezt csak Windows-gépen lehet kipróbálni.
+- A konfig ugyanaz marad (`cursor`, `cursor_scale`), csak a megvalósítás platformfüggő: `platform/win/cursor.py`, ugyanazzal a `show()` / `hide()` felülettel, mint Linuxon.
+
+Alternatíva: egy rétegablak, mint Linuxon (`WS_EX_LAYERED | WS_EX_TRANSPARENT`, nyers egéresemények, a rendszerkurzor elrejtése). Ezt csak akkor javaslom, ha a csere valamelyik játékban nem működik.
 
 ## Mérföldkövek
 
@@ -261,4 +292,5 @@ Működés:
 4. ✓ **M4 – grafikus felület és Windows-telepítő:** v0.1.0.
 5. ✓ **L1–L3 – Linux port:** hidraw, OpenRazer-figyelmeztetés, X11 ablakfigyelés, autostart, .deb, élő állapot; v0.2.0.
 6. ✓ **Dokk akkuszint-kapcsoló** (v0.2.1) és **egyedi kurzor** (v0.2.2), csak Linux.
-7. **Következő – Windows utolérése:** eseményolvasó lekérdezés nélkül, a dokk-kapcsoló és az élő állapot kipróbálása Windowson, Windows-kiadás.
+7. **Következő – a profilgombos váltás követése** (A terv, Linuxon kezdve).
+8. **Windows utolérése:** eseményolvasó lekérdezés nélkül, egyedi kurzor (B terv), a dokk-kapcsoló és az élő állapot kipróbálása Windowson, Windows-kiadás.
